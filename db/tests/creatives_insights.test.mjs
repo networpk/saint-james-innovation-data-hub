@@ -20,7 +20,7 @@ async function setup() {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql"]) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql"]) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -248,4 +248,37 @@ test("a GA4 mikro-események (telefon, foglalás, űrlap-kezdés) bekerülnek a 
     ($1,'312872101','form_start','google','cpc','GSN - Brand',8), ($1,'312872101','idopont_foglalas_katt','google','cpc','GSN - Brand',11)`, [ASOF]);
   const r = (await db.query("select * from mart_source_conversion_daily")).rows[0];
   assert.deepEqual([r.phone_clicks, r.booking_success, r.form_starts, r.booking_clicks].map(Number), [5, 2, 8, 11]);
+});
+
+test("kulcsszó-értékelés: kevés adat, állítsd le, folytasd, csökkentsd, és a historikus idősor", async () => {
+  const db = await setup();
+  await db.query("insert into campaign_class values ('google','g1','gc1','GSN - Competitor - Sasszem /konvmax','szemeszet','General','Competitor','rule')");
+  await db.query("insert into campaign_class values ('google','g1','gc2','GSN - Brand /konvmax','szemeszet','General','Brand','rule')");
+  // 20 nap: a jó kulcsszó olcsón konvertál, a versenytárs-kulcsszó sokat költ konverzió nélkül, a ritka kulcsszóból kevés kattintás van
+  for (let i = 0; i < 20; i++) {
+    const d = day(i);
+    await db.query(`insert into fact_keyword_daily(date,account_id,campaign_id,ad_group_id,keyword_text,match_type,impressions,clicks,spend,conversions) values
+      ($1,'g1','gc2','a','saint james','',100,20,2000,2),            -- jó: 40 konverzió / 400 kattintás, 1000 Ft/konv.
+      ($1,'g1','gc2','a','drága kulcsszó','',50,10,4000,0.5),        -- drága: 10 konv / 200 kattintás, 8000 Ft/konv.
+      ($1,'g1','gc1','a','sasszemklinika','',60,5,1500,0),           -- 100 kattintás, 0 konverzió: elég adat a leállításhoz
+      ($1,'g1','gc1','a','ritka kifejezés','',2,0,0,0)`, [d]);
+  }
+  await db.query(`insert into fact_keyword_daily(date,account_id,campaign_id,ad_group_id,keyword_text,match_type,impressions,clicks,spend,conversions) values ($1,'g1','gc1','a','két kattintás',  '',5,2,400,0)`, [day(0)]);
+  const all = (await db.query("select * from keyword_performance($1::date,$2::date,null,null,'szemeszet',null,null,null,null,0,50,0)", [day(0), day(19)])).rows;
+  const v = (k) => all.find((r) => r.keyword_text === k);
+  assert.equal(v("saint james").verdict, "folytasd");
+  assert.equal(v("drága kulcsszó").verdict, "csokkentsd");
+  assert.equal(v("sasszemklinika").verdict, "allitsd_le");
+  assert.equal(v("két kattintás").verdict, "keves_adat");
+  assert.match(v("sasszemklinika").verdict_reason, /0 konverzió/);
+  // kategória / alkategória szűrő: csak a Competitor kulcsszavak
+  const comp = (await db.query("select keyword_text from keyword_performance($1::date,$2::date,null,null,'szemeszet','General','Competitor',null,null,0,50,0)", [day(0), day(19)])).rows.map((r) => r.keyword_text).sort();
+  assert.deepEqual(comp, ["két kattintás", "ritka kifejezés", "sasszemklinika"]); // mindhárom a Competitor kampányban van
+  // historikus heti idősor
+  const h = (await db.query("select * from keyword_history('sasszemklinika',$1::date,$2::date,'week')", [day(0), day(19)])).rows;
+  assert.ok(h.length >= 3);
+  assert.equal(Number(h.reduce((a, r) => a + Number(r.clicks), 0)), 100);
+  // üres adatbázis / nincs találat nem hibázik
+  const none = (await db.query("select * from keyword_performance($1::date,$2::date,null,null,'szemeszet','Nincs ilyen',null,null,null,0,50,0)", [day(0), day(19)])).rows;
+  assert.equal(none.length, 0);
 });
