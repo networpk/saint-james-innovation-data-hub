@@ -98,3 +98,25 @@ test("az észrevételek üres adatbázison nem hibáznak és nem adnak vissza se
   const out = (await db.query("select * from insights($1::date, 14)", [ASOF])).rows;
   assert.equal(out.length, 0);
 });
+
+test("az RLS-fájl Supabase-szerű szerepkörökkel hibátlanul lefut, és a látogató semmit nem olvas", async () => {
+  const db = new PGlite();
+  await db.exec("create role anon nologin; create role authenticated nologin;");
+  // a Supabase alapból minden új táblára/nézetre ad jogot az anon/authenticated szerepkörnek: ezt utánozzuk
+  await db.exec("grant usage on schema public to anon, authenticated");
+  await db.exec("alter default privileges in schema public grant all on tables to anon, authenticated");
+  await db.exec(sql("0001_core.sql"));
+  await db.exec(sql("0002_kpi_targets.sql"));
+  await db.exec(`create table campaign_class (platform text, account_id text, campaign_id text, campaign_name text,
+    business_line text, category text, subcategory text, class_source text)`);
+  await db.exec(sql("0004_analytics_v2.sql"));
+  await db.exec(sql("0005_creatives_insights.sql"));
+  await db.exec(sql("0006_rls_v2.sql"));
+  await db.exec("set role anon");
+  await assert.rejects(() => db.query("select * from fact_keyword_daily"), /permission denied/);
+  await assert.rejects(() => db.query("select * from mart_funnel_daily"), /permission denied/);
+  await assert.rejects(() => db.query("select * from insights(current_date - 1, 14)"), /permission denied/);
+  await db.exec("reset role; set role authenticated");
+  const r = await db.query("select count(*)::int as n from mart_funnel_daily");
+  assert.equal(r.rows[0].n, 0);
+});
