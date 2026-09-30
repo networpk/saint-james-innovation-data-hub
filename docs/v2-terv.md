@@ -32,7 +32,7 @@ pazarló kulcsszó · költségkeret-korlátos, hatékony kampány · rangsor-ko
 ## 6. Amit a mostani mérés nem tud – és a két beállítás, ami ezt megoldja
 1. **A lead még nem köthető a kampányhoz/kulcsszóhoz/kreatívhoz.** A foglaló csak azt látja, ami az URL-ben van. A Meta-hirdetéseknél a GA4 kampánynév alapján a UTM már beállított (kampánynév), de a hirdetés (kreatív) és a hirdetéscsoport nincs benne; a Google automatikus címkézés csak `gclid`-et ad.
    - **Meta (hirdetés szintű URL-paraméterek):** `utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_content={{ad.id}}&utm_term={{adset.name}}`
-   - **Google Ads (fiókszintű követősablon):** `{lpurl}?utm_source=google&utm_medium=cpc&utm_campaign={campaignid}&utm_content={creative}&utm_term={keyword}`
+   - **Google Ads (fiókszintű „Final URL suffix", előnyben a követősablonnal szemben, mert nem írja át az átirányítást):** `utm_source=google&utm_medium=cpc&utm_campaign={campaignid}&utm_content={creative}&utm_term={keyword}` (a Google ValueTrack-ben nincs kampánynév, ezért azonosító; a Hub a kampány-azonosítót nevesíti)
    - **TikTok:** `utm_source=tiktok&utm_medium=cpc&utm_campaign=__CAMPAIGN_NAME__&utm_content=__CID_NAME__`
    Ezután a lead a kampányon túl **kulcsszóhoz és kreatívhoz** is köthető (kulcsszó → hard lead → foglalás). Figyelem: a Google automatikus címkézés és a kézi UTM együtt is használható, de ellenőrizni kell, hogy a GA4 jelentések ne változzanak („felülírás engedélyezése" beállítás).
 2. **Dokirex-státusz** (megjelent / lemondta / bevétel) a végpont ismeretében köthető be.
@@ -43,3 +43,10 @@ pazarló kulcsszó · költségkeret-korlátos, hatékony kampány · rangsor-ko
 - A korreláció nem bizonyít ok-okozatot.
 - Az esztétika/plasztika kategóriák még nincsenek meghatározva.
 - A Windsor-fiók jelenleg próbaidőszakon van (30 nap): fizetős csomag kell a folyamatos betöltéshez.
+
+
+## 8. Teendők a lead-attribúcióhoz (sorrend!)
+1. A foglaló app publikálása (Lovable) – hogy a böngészős attribúció élessé váljon.
+2. A GTM-snippet a lassjol.hu-n (`integrations/lassjol-parent/gtm-custom-html.html`).
+3. Hirdetési URL-paraméterek: Meta (hirdetésenként), Google Ads (fiókszinten, „Final URL suffix"), TikTok (hirdetésenként). A Google „felülírás engedélyezése" (manuális címkézés felülírja az automatikusat) **maradjon kikapcsolva**, hogy a GA4 kampánynevei ne változzanak.
+4. Próba: `https://lassjol.hu/?utm_source=teszt&utm_medium=cpc&utm_campaign=TESZT&utm_content=teszt1&utm_term=teszt2` → foglaló, Elérhetőség lépés belső e-mail-címmel → a lead sorában a `utm` mezőben jelenjenek meg az értékek (a próba-leadet utána törölni).
