@@ -20,7 +20,7 @@ async function setup() {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql"]) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql"]) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -391,5 +391,65 @@ test("értesítési központ: adatminőségi riasztás, deduplikálás, halaszt�
   await db.exec("reset role; set role authenticated");
   assert.ok((await db.query("select * from alert")).rows.length > 0);
   await assert.rejects(db.query("update alert set status='resolved'"));
+  await db.exec("reset role");
+});
+
+test("lead-életút: alkalmassági és foglalási leadek szétválasztva, félbehagyott és végigvitt, lépésidők, személyszintű összekötés", async () => {
+  const db = await setup();
+  const ins = (id, at, src, stage, prog, hash, extra = {}) => db.query(
+    `insert into fact_lead(lead_id,created_at,updated_at,source,booking_stage,result_type,booking_progress,email_hash,utm,click_ids,quiz_session_id,dokirex_booking_id)
+     values ($1,$2,$2,$3,$4,'ok',$5,$6,$7,$8,$9,$10)`,
+    [id, at, src, stage, prog ? JSON.stringify(prog) : null, hash, extra.utm ? JSON.stringify(extra.utm) : null, extra.click ? JSON.stringify(extra.click) : null, extra.qs ?? null, extra.dok ?? null]);
+  const U = (n) => `00000000-0000-0000-0000-00000000000${n}`;
+  await db.query(`insert into fact_quiz_session(session_id,payload) values ($1,$2)`, [U(9), JSON.stringify({ started_at: "2026-09-10T09:50:00Z", furthest_step: "nearDiopter", completed: true })]);
+  await ins(U(1), "2026-09-10T10:00:00Z", "quiz", null, null, "A", { utm: { utm_source: "facebook", utm_campaign: "C1" }, qs: U(9) });
+  await ins(U(2), "2026-09-12T10:00:00Z", "booking", "completed", { lastStep: "done", totalSeconds: 300, stepSeconds: { contact: 60, choice: 10, treatment: 30, calendar: 150, confirm: 49, done: 1 } }, "A", { dok: 555 });
+  await ins(U(3), "2026-09-13T10:00:00Z", "booking", "contact", { lastStep: "calendar", secondsOnLastStep: 180, totalSeconds: 200, stepSeconds: { contact: 15, choice: 5, calendar: 180 } }, "B", { click: { fbclid: "x" } });
+  await ins(U(4), "2026-09-14T10:00:00Z", "booking", "completed", { lastStep: "callback", totalSeconds: 40, stepSeconds: { contact: 20, callback: 0 } }, "C");
+  await ins(U(5), "2026-09-15T10:00:00Z", "quiz", null, null, "D");
+  await db.query(`insert into fact_lead_event(source_id,lead_id,event,step,meta,created_at) values (1,$1,'step_view','calendar','{"secondsOnLastStep":150}','2026-09-12T10:03:00Z')`, [U(2)]);
+
+  const j = Object.fromEntries((await db.query("select lead_id, lead_type, outcome, last_step, total_seconds, hours_to_booking, hours_since_quiz, has_source, click_id_type, quiz_furthest_step from lead_journey")).rows.map((r) => [r.lead_id, r]));
+  assert.equal(j[U(1)].lead_type, "alkalmassagi");
+  assert.equal(j[U(2)].lead_type, "idopontfoglalas");
+  assert.equal(j[U(2)].outcome, "foglalt");
+  assert.equal(j[U(3)].outcome, "felbehagyta");
+  assert.equal(j[U(3)].last_step, "calendar");
+  assert.equal(j[U(4)].outcome, "visszahivas");
+  assert.equal(Number(j[U(1)].hours_to_booking), 48);
+  assert.equal(Number(j[U(2)].hours_since_quiz), 48);
+  assert.equal(j[U(5)].hours_to_booking, null, "a másik személy kvíz-leadje nem foglalt");
+  assert.equal(j[U(1)].quiz_furthest_step, "nearDiopter");
+  assert.equal(Number(j[U(1)].total_seconds), 600);
+  assert.equal(j[U(3)].click_id_type, "fbclid");
+  assert.equal(j[U(1)].has_source, true);
+  assert.equal(j[U(5)].has_source, false);
+
+  const s = (await db.query("select * from lead_journey_summary('2026-09-01','2026-09-30',null)")).rows[0];
+  assert.equal(Number(s.quiz_leads), 2);
+  assert.equal(Number(s.quiz_leads_booked_later), 1);
+  assert.equal(Number(s.booking_starts), 3);
+  assert.equal(Number(s.booked), 1);
+  assert.equal(Number(s.abandoned), 1);
+  assert.equal(Number(s.callbacks), 1);
+  assert.ok(Math.abs(Number(s.completion_rate) - 1 / 3) < 1e-9);
+  assert.equal(Number(s.median_seconds_booked), 300);
+  assert.equal(Number(s.median_seconds_abandoned), 200);
+  assert.equal(Number(s.median_hours_quiz_to_booking), 48);
+
+  const st = Object.fromEntries((await db.query("select * from lead_step_time('2026-09-01','2026-09-30',null)")).rows.map((r) => [r.step, r]));
+  assert.equal(Number(st.calendar.dropped_here), 1);
+  assert.equal(Number(st.calendar.median_seconds_abandoned), 180);
+  assert.equal(Number(st.calendar.median_seconds_booked), 150);
+  assert.equal(Number(st.done.reached_booked), 1);
+
+  const tl = (await db.query("select kind, label from lead_timeline($1)", [U(2)])).rows;
+  assert.ok(tl.some((r) => r.kind === "event" && r.label === "step_view"));
+  assert.ok(tl.some((r) => r.kind === "related" && /alkalmassági/.test(r.label)));
+  assert.equal((await db.query("select count(*) n from lead_journey_summary('2026-09-01','2026-09-30','eszteika_plasztika')")).rows[0].n, 1);
+  assert.equal(Number((await db.query("select quiz_leads from lead_journey_summary('2026-09-01','2026-09-30','eszteika_plasztika')")).rows[0].quiz_leads), 0);
+
+  await db.exec("set role anon");
+  await assert.rejects(db.query("select * from lead_journey"));
   await db.exec("reset role");
 });
