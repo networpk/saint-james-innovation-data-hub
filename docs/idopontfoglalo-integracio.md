@@ -123,6 +123,12 @@ Az iframe külön origin, ezért **nem látja** a szülő oldal URL-jét, UTM-je
 - A dashboard elsődleges szűrője legyen az üzletág; a két üzletág külön KPI-célokat és külön pillér-listát kaphat.
 - A kampánynév-konvencióba bekerül: `SJ_{ÜZLETÁG}_{platform}_{cél}_{pillér}_…` (pl. `SJ_SZEM_META_LEAD_LASER_…`, `SJ_ESZT_GADS_LEAD_…`).
 
+## 6.3 Elkészült kész anyagok (ebben a repóban)
+
+- `integrations/lassjol-parent/sj-attribution.js` – a **lassjol.hu**-ra (GTM Custom HTML) kerülő script; a `bookingOrigins` még kitöltendő az app valódi origin-jével.
+- `integrations/booking-app/0001_attribution_and_events.sql` – migráció: attribúciós oszlopok, `dokirex_booking_id`, `lead_events`, `leads_export` nézet, read-only `hub_reader` szerepkör.
+- `integrations/booking-app/lovable-prompts.md` – négy, sorban küldendő Lovable-prompt (még **nincs elküldve**).
+
 ## 7. Javasolt sorrend
 
 1. **A + B** (attribúció + strukturált Dokirex azonosító) – kis, jól körülhatárolt Lovable-módosítás, azonnal elkezd gyűlni az értékes adat.
