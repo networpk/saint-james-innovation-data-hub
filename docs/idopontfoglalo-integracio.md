@@ -54,10 +54,10 @@ Data Hub: fact_lead, fact_lead_event, fact_booking, fact_lead_booking_link
 
 **A. Attribúció-rögzítés (kritikus)**
 - Új kliens modul (`src/lib/attribution.ts`): az **első** oldalbetöltéskor kiolvassa `utm_source, utm_medium, utm_campaign, utm_content, utm_term, fbclid, gclid, ttclid, wbraid, gbraid`, `document.referrer`, landing URL, és elmenti `localStorage`-ba (first-touch megőrzése, + last-touch külön). Kvíz és foglaló is ugyanazt használja.
-- Ha a foglaló iframe-ben fut (van `EmbedSettings` / `redirectTop`), a paramétereket a **szülő oldalnak** kell továbbadnia (pl. `postMessage` vagy az iframe URL-jében átadott query) – ezt a weboldal oldalon is ellenőrizni kell.
-- Új `leads` oszlopok (migráció): `utm jsonb`, `click_ids jsonb`, `landing_url text`, `referrer text`, `ga_client_id text`, `site text`, `first_touch_at timestamptz`.
+- **A foglaló iframe-ben fut → a paramétereket a szülő oldalnak kell átadnia** (iframe `src` query + `postMessage` origin-ellenőrzéssel) – lásd 6.1. Ehhez a szülő oldalra is kell egy kis script (GTM).
+- Új `leads` oszlopok (migráció): `utm jsonb`, `click_ids jsonb`, `landing_url text`, `referrer text`, `ga_client_id text`, `fbp text`, `fbc text`, `site text`, `business_line text`, `first_touch_at timestamptz`.
 - `booking-lead` és a kvíz lead-beküldés kapja meg és tárolja ezeket (whitelistezett kulcsok, hossz-korlát).
-- Opcionális: GA4 `client_id` kiolvasása (`_ga` cookie), ha a GA4 script be van téve; a Meta Pixel/gtag jelenlétét a weboldal oldalán kell ellenőrizni.
+- GA4 `client_id`/`session_id` és Meta `_fbp/_fbc` átvétele a szülő oldaltól (a pixel/GA4 a szülő oldalon fut, nem az iframe-ben) – részletek a 6.1 fejezetben.
 
 **B. Dokirex azonosító strukturáltan (magas)**
 - A `complete` hívásnál a `dokirex` válasz `elojegyzesId`-ját ne csak a `note`-ba írjuk, hanem `booking_details.dokirex = { elojegyzesId, status: "booked", bookedAt }` formában (ezt az admin UI már így várja) **és** külön oszlopba: `leads.dokirex_booking_id bigint` (indexelve).
@@ -84,14 +84,39 @@ Data Hub: fact_lead, fact_lead_event, fact_booking, fact_lead_booking_link
 
 **Dokirex oldal:** a Hub a meglévő Dokirex API-t olvassa a `dokirex_booking_id`-k státuszáért (megjelent/lemondta, bevétel, ha elérhető). Itt nyitott kérdés, hogy az API mit ad vissza (lásd 6.).
 
-## 6. Nyitott kérdések az app kapcsán
+## 6. Tisztázott és nyitott kérdések
 
-1. **Hol van beágyazva a foglaló/kvíz?** Iframe a weboldalon (saintjameshungary.hu / lassjol.hu) vagy önálló domain? Ettől függ az UTM-átadás módja.
-2. **Van Meta Pixel / GA4 / Google Tag** a weboldalon és az appban? Melyik domainen fut a GA4?
-3. **Dokirex API:** van-e végpont az előjegyzés státuszához (megjelent/lemondva) és a bevételhez az `elojegyzesId` alapján? Jelenleg az app csak `listSlots`, kezelések és foglalás hívásokat használ.
-4. **Melyik márkához tartozik az app** (Saint James Szemészeti Központ vs. Lassjol)? A `site` mezőt ennek megfelelően kell kitölteni.
-5. A `quiz_answers` és a foglalási `megjegyzés` mezők egészségügyi adatot tartalmazhatnak – a Hub-exportból kizárjuk; jóváhagyod?
-6. Az app Supabase projektje (`beqqujyijevxmejzwgmn`) a Hub Supabase-éhez képest külön marad? (Javaslat: igen, a Hub külön projekt, és pull-lal olvassa az appét.)
+**Tisztázva**
+- **Beágyazás: iframe** a weboldalon → lásd 6.1 (ez meghatározza az attribúció-átadás módját).
+- **A weboldalon van Meta Pixel és GA4** – ezek a *szülő oldalon* futnak, nem az iframe-ben (az iframe-ben jelenleg nincs pixel/gtag) → lásd 6.1.
+- **Két üzletág, ugyanaz a Saint James márka:** szemészet és esztétika/plasztika → a modellben `business_line` dimenzió kell (lásd 6.2).
+
+**Még nyitott**
+1. **Dokirex API – státusz és bevétel.** Az appban csak a kezelés-lista, a szabad időpont és a foglalás hívás szerepel; a státusz-végpont létezését a Dokirex dokumentációjában vagy a szállítónál kell ellenőrizni (keresendő: előjegyzés lekérdezése `elojegyzesId` alapján, státusz: megjelent/lemondva/nem jelent meg, számla/bevétel). Amíg ez nincs meg, a Hub a foglalásig (nem a megjelenésig) tud követni.
+2. **Melyik domain/üzletág melyik?** A Windsor-ban két weboldal van (*saintjameshungary.hu*, *lassjol.hu*), és két Google Ads fiók (*Saint James*, *Saint James Vision and Aesthetics Center*). Kérlek add meg a pontos megfeleltetést: domain → üzletág → Meta/Google/GA4 fiók.
+3. **Az esztétika/plasztika üzletág leadjei honnan érkeznek?** Az app **kizárólag szemészeti** időpontokat kínál (a `dokirex` függvény fixen csak a „Szemészet” szakrendelést listázza). Ha az esztétika is ebbe az iframe-be megy, vagy külön űrlap/foglaló van, az másik adatforrás, és külön be kell kötni.
+4. Az iframe-et beágyazó oldalakat (WordPress/egyéb CMS?) ki tudjuk-e egészíteni egy kis script-tel (tag manager)?
+5. Egészségügyi jellegű mezők (`quiz_answers`, foglalási megjegyzés) kizárása a Hub-exportból – jóváhagyod?
+6. Az app Supabase projektje külön marad a Hub-étól? (Javaslat: igen, a Hub pull-lal olvassa.)
+
+### 6.1 Iframe + Pixel/GA4: hogyan jusson át az attribúció
+
+Az iframe külön origin, ezért **nem látja** a szülő oldal URL-jét, UTM-jeit, cookie-jait, és a szülő Meta Pixel/GA4 sem fut benne. Emiatt az attribúciót a szülő oldalnak kell átadnia:
+
+1. **Szülő oldali kis script** (Google Tag Manager-ből, ha van, különben közvetlenül): az oldalbetöltéskor kiolvassa az URL-ből `utm_*, fbclid, gclid, ttclid, wbraid, gbraid`, a `document.referrer`-t, a landing URL-t, az **`_fbp` és `_fbc` cookie-t** (Meta), a **GA4 `client_id`-t és `session_id`-t** (`_ga`, `_ga_<ID>`), és first-touch elv szerint elmenti a szülő domain `localStorage`-ába/cookie-jába.
+2. **Átadás az iframe-nek – két módon együtt (redundancia):**
+   - az iframe `src`-jéhez hozzáfűzi a paramétereket (`/idopont?utm_source=…&fbclid=…&ga_cid=…&fbp=…`) – ez megbízható, még ha a `postMessage` el is késik;
+   - `postMessage` üzenet (`{type:"sj-attribution", …}`), amelyet az app csak az engedélyezett szülő origin-ekről fogad el (origin-ellenőrzés kötelező).
+3. **Az app oldalán** az `attribution.ts` modul először a query-paramétereket olvassa, aztán a `postMessage`-et, és a `leads` sorral együtt menti.
+4. **Fordított irány – események a szülő oldal felé** (`postMessage`): az app a fő lépéseknél (`lead`, `booking_confirmed`) üzenetet küld a szülőnek, amely a **szülő Pixelen és GA4-en** keresztül elsüti a `Lead` / `Schedule` (Meta) és `generate_lead` / `booking_confirmed` (GA4) eseményt. Így a platformok is látják a konverziót, és a GA4 funnel is teljes lesz.
+5. **Később: Meta CAPI és Google Enhanced Conversions** szerver oldalról, az `_fbp/_fbc` és hash-elt e-mail/telefon alapján, **deduplikációs `event_id`-val** (ugyanaz az ID megy a Pixelnek és a CAPI-nak).
+6. **Hozzájárulás (consent):** a Pixel/GA4 használata és az azonosítók tárolása cookie-hozzájáruláshoz kötött. A szülő script csak akkor adhat át `_fbp/_fbc/client_id` értéket, ha a látogató a marketing/analitika sütiket elfogadta – az UTM-ek (nem személyes) átadhatók.
+
+### 6.2 Üzletág-dimenzió
+
+- Új dimenzió: `dim_business_line` (`szemeszet`, `eszteika_plasztika`), amelyet **minden tény** megkap: hirdetés (kampány → üzletág mapping), lead (`leads.business_line`, az app/iframe állítja be), foglalás, organikus poszt, GA4 property, Ahrefs domain.
+- A dashboard elsődleges szűrője legyen az üzletág; a két üzletág külön KPI-célokat és külön pillér-listát kaphat.
+- A kampánynév-konvencióba bekerül: `SJ_{ÜZLETÁG}_{platform}_{cél}_{pillér}_…` (pl. `SJ_SZEM_META_LEAD_LASER_…`, `SJ_ESZT_GADS_LEAD_…`).
 
 ## 7. Javasolt sorrend
 

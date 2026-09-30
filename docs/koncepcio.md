@@ -94,7 +94,7 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 | `googleanalytics4` | saintjameshungary.hu; Lassjol.hu – GA4 | Weboldali viselkedés, session, konverziós események |
 | `ahrefs` | lassjol.hu; saintjameshungary.hu | SEO: organikus kulcsszavak, pozíciók, backlinkek, versenytárs-domain adatok |
 
-> Megjegyzés: két márka/weboldal látszik (**saintjameshungary.hu** és **lassjol.hu**). A modellben ezért kötelező egy `brand/site` dimenzió, és a szűrőknek is tartalmazniuk kell.
+> Megjegyzés: egy márka (Saint James), **két üzletág** (szemészet és esztétika/plasztika), két weboldallal (**saintjameshungary.hu**, **lassjol.hu**) és két Google Ads fiókkal. A modellben kötelező a `business_line` és a `site` dimenzió, a szűrőkben is. A domain → üzletág megfeleltetés még egyeztetendő.
 
 **Hogyan illeszkednek a hubba**
 - **Social organikus (Facebook, Instagram)** → `fact_organic_post_daily`; a posztok is kapnak **tartalmi pillér** címkét, így a fizetett és organikus tartalom **ugyanazon pillér-tengelyen** összehasonlítható (mi működik organikusan → mit érdemes hirdetni).
@@ -115,7 +115,7 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 
 ### 4.3 Az időpontfoglaló app bekötése – lead-életút
 
-> **Az app átvizsgálva** (`networpk/saintjamesalkalamssagi`): részletes leírás, hiányosságok és módosítási lista → [`idopontfoglalo-integracio.md`](idopontfoglalo-integracio.md). Fő megállapítások: (1) az app jelenleg **nem rögzít UTM-et/click ID-t**, (2) a **Dokirex** (=DocuRex) `elojegyzesId` csak szabad szövegben tárolódik a leaden, (3) a Hub Supabase-pull útján olvashatja az adatokat.
+> **Az app átvizsgálva** (`networpk/saintjamesalkalamssagi`): részletes leírás, hiányosságok és módosítási lista → [`idopontfoglalo-integracio.md`](idopontfoglalo-integracio.md). Fő megállapítások: (0) az app **iframe-ben** fut, és **csak szemészeti** időpontokat kezel (az esztétika leadjei máshonnan jönnek, vagy még nincsenek bekötve), (1) az app jelenleg **nem rögzít UTM-et/click ID-t**, (2) a **Dokirex** (=DocuRex) `elojegyzesId` csak szabad szövegben tárolódik a leaden, (3) a Hub Supabase-pull útján olvashatja az adatokat.
 
 **Miért kulcsfontosságú:** a weboldali leadek ezen az appon keresztül érkeznek, tehát itt dől el, hogy a hirdetés→lead→foglalás lánc **követhető-e**. Ha az app a lead létrehozásakor elmenti, honnan jött a látogató, a hub végig tudja vezetni a leadet a hirdetéstől a DocuRex foglalásig.
 
@@ -143,6 +143,7 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 
 **Dimenziók**
 - `dim_platform` (meta, google, tiktok, facebook_organic, instagram, ga4, ahrefs)
+- `dim_business_line` (szemészet, esztétika/plasztika) – **elsődleges szűrő**, minden ténytáblán
 - `dim_brand_site` (saintjameshungary.hu, lassjol.hu, …)
 - `dim_account`, `dim_campaign`, `dim_adset_adgroup`, `dim_ad` (kreatív)
 - `dim_content_pillar` – tartalmi pillérek (pl. wellness, gasztro, romantikus, családi, rendezvény – **a tényleges listát az ügyféllel kell véglegesíteni**)
