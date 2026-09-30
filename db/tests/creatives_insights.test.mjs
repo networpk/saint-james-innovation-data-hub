@@ -130,3 +130,39 @@ test("GA4-adat nélkül nincs téves kattintás→látogató riasztás", async (
   const keys = (await db.query("select insight_key from insights($1::date, 14)", [ASOF])).rows.map((r) => r.insight_key);
   assert.ok(!keys.includes("click_session_gap"), keys.join(","));
 });
+
+test("forrás szerinti konverzió: szerves és direkt forgalom is benne van, az események nem duplázódnak", async () => {
+  const db = new PGlite();
+  await db.exec("create role anon nologin; create role authenticated nologin;");
+  await db.exec("grant usage on schema public to anon, authenticated");
+  await db.exec("alter default privileges in schema public grant all on tables to anon, authenticated");
+  for (const f of ["0001_core.sql", "0002_kpi_targets.sql"]) await db.exec(sql(f));
+  await db.exec(`create table campaign_class (platform text, account_id text, campaign_id text, campaign_name text,
+    business_line text, category text, subcategory text, class_source text)`);
+  for (const f of ["0004_analytics_v2.sql", "0005_creatives_insights.sql", "0007_fix_click_gap.sql", "0008_source_conversion.sql"]) await db.exec(sql(f));
+  await db.query(`insert into fact_web_daily(date,account_id,source,medium,channel_group,campaign,sessions,engaged_sessions) values
+    ($1,'312872101','google','cpc','Paid Search','GSN - Brand',100,80),
+    ($1,'312872101','google','cpc','Cross-network','GSN - Brand',20,10),      -- azonos forrás, másik csatorna-csoport: nem duplázhatja az eseményt
+    ($1,'312872101','tiktok','cpc','Paid Social','Lassjol - LASER - Leads',60,30),
+    ($1,'312872101','google','organic','Organic Search','(organic)',50,40),
+    ($1,'312872101','(direct)','(none)','Direct','(direct)',41,24)`, [ASOF]);
+  await db.query(`insert into fact_web_event_daily(date,account_id,event_name,source,medium,campaign,event_count) values
+    ($1,'312872101','soft_conv_foglaljon','google','cpc','GSN - Brand',12),
+    ($1,'312872101','generate_lead','google','cpc','GSN - Brand',3),
+    ($1,'312872101','soft_conv_foglaljon','tiktok','cpc','Lassjol - LASER - Leads',7),
+    ($1,'312872101','generate_lead','tiktok','cpc','Lassjol - LASER - Leads',2),
+    ($1,'312872101','soft_conv_foglaljon','facebook','cpc','LASSJOL - SMILE - AO',9),   -- nincs hozzá munkamenet-sor: így is megjelenik
+    ($1,'312872101','page_view','google','cpc','GSN - Brand',999)`, [ASOF]);
+  const rows = (await db.query("select source, medium, campaign, sessions, soft_leads, ga_hard_leads from mart_source_conversion_daily order by source, campaign")).rows;
+  const by = (s, c) => rows.find((r) => r.source === s && r.campaign === c);
+  assert.equal(Number(by("google", "GSN - Brand").sessions), 120);
+  assert.equal(Number(by("google", "GSN - Brand").soft_leads), 12);
+  assert.equal(Number(by("google", "GSN - Brand").ga_hard_leads), 3);
+  assert.equal(Number(by("tiktok", "Lassjol - LASER - Leads").soft_leads), 7);
+  assert.equal(Number(by("facebook", "LASSJOL - SMILE - AO").soft_leads), 9);
+  assert.equal(Number(by("(direct)", "(direct)").sessions), 41);
+  assert.equal(Number(by("google", "(organic)").sessions), 50);
+  // RLS: látogató nem éri el
+  await db.exec("set role anon");
+  await assert.rejects(() => db.query("select * from mart_source_conversion_daily"), /permission denied/);
+});
