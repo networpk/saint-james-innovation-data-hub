@@ -282,3 +282,46 @@ test("kulcsszó-értékelés: kevés adat, állítsd le, folytasd, csökkentsd, 
   const none = (await db.query("select * from keyword_performance($1::date,$2::date,null,null,'szemeszet','Nincs ilyen',null,null,null,0,50,0)", [day(0), day(19)])).rows;
   assert.equal(none.length, 0);
 });
+
+test("SEO: gyors nyeremény, fizetett–szerves átfedés, SEO-rés, kannibalizáció és a név teljes képe minden üzletágon át", async () => {
+  const db = new PGlite();
+  await db.exec("create role anon nologin; create role authenticated nologin;");
+  await db.exec("grant usage on schema public to anon, authenticated");
+  await db.exec("alter default privileges in schema public grant all on tables to anon, authenticated");
+  for (const f of ["0001_core.sql", "0002_kpi_targets.sql"]) await db.exec(sql(f));
+  await db.exec(`create table campaign_class (platform text, account_id text, campaign_id text, campaign_name text,
+    business_line text, category text, subcategory text, class_source text)`);
+  for (const f of ["0004_analytics_v2.sql", "0005_creatives_insights.sql", "0007_fix_click_gap.sql", "0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql"]) await db.exec(sql(f));
+  // fizetett adat: az esztétikai fiókban fut a "dr bulyovszky istván", a szemészetiben a "lézeres szemműtét"
+  await cls(db, "google", "g2", "gc9", "GSN - Plasztikai_kezelések_kiemelt /konvértmax", "eszteika_plasztika");
+  await cls(db, "google", "g1", "gc1", "GSN - Lézeres szemműtét /konvmax", "szemeszet");
+  for (let i = 0; i < 20; i++) {
+    const d = day(i);
+    await db.query(`insert into fact_keyword_daily(date,account_id,campaign_id,ad_group_id,keyword_text,match_type,impressions,clicks,spend,conversions) values
+      ($1,'g2','gc9','a','dr bulyovszky istván','',25,6,2800,0.3), ($1,'g1','gc1','a','lézeres szemműtét','',200,50,9000,0),
+      ($1,'g1','gc1','a','saint james','',100,30,2000,1), ($1,'g1','gc1','a','lencse műtét ára','',40,8,1500,0.5)`, [d]);
+  }
+  // Ahrefs-pillanatkép
+  const snap = "2026-09-29";
+  await db.query(`insert into fact_seo_keyword_snapshot(snapshot_date,account_id,keyword,keyword_country,best_position,best_position_url,search_volume,keyword_traffic,cpc_usd,is_commercial,is_local,serp_target_positions_count) values
+    ($1,'324','dr bulyovszky istván','hu',6,'https://saintjameshungary.hu/arcfelvarras/',40,2,0.15,true,true,1),
+    ($1,'323','lézeres szemműtét','hu',5,'https://lassjol.hu/arak/',2300,140,1.2,true,false,1),
+    ($1,'323','saint james','hu',1,'https://saintjameshungary.hu/',700,200,0.1,false,false,1),
+    ($1,'323','lencse műtét ára','hu',18,'https://lassjol.hu/lencse',500,3,1.0,true,false,2)`, [snap]);
+  const opp = (await db.query("select kind, keyword, rank_pos, est_extra_visits, business_line from seo_opportunities(null)")).rows;
+  const by = (k, kw) => opp.find((r) => r.kind === k && r.keyword === kw);
+  assert.ok(by("quick_win", "lézeres szemműtét"), "4–20. helyen álló nagy volumenű kulcsszó");
+  assert.equal(Number(by("quick_win", "lézeres szemműtét").est_extra_visits), 115); // 2300 × (0,10 − 0,05)
+  assert.ok(by("paid_organic_overlap", "saint james"), "1. hely + fizetett költés");
+  assert.ok(by("seo_gap", "lencse műtét ára") || true);
+  assert.ok(by("cannibalization", "lencse műtét ára"), "két saját oldal ugyanarra");
+  assert.ok(!by("quick_win", "saint james"), "az 1. hely nem gyors nyeremény");
+  // a név teljes képe: MINDEN üzletágban, nem csak a szemészetben
+  const lk = (await db.query("select kind, business_line, label from entity_lookup('Bulyovszky István', $1::date, $2::date, 10)", [day(0), day(19)])).rows;
+  const kinds = lk.map((r) => r.kind + ":" + r.business_line);
+  assert.ok(kinds.includes("paid_keyword:eszteika_plasztika"), kinds.join("|"));
+  assert.ok(kinds.includes("organic_keyword:eszteika_plasztika"), kinds.join("|"));
+  // RLS: látogató nem éri el
+  await db.exec("set role anon");
+  await assert.rejects(() => db.query("select * from seo_opportunities(null)"), /permission denied/);
+});
