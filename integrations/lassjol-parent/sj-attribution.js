@@ -15,8 +15,8 @@
   "use strict";
 
   var CFG = {
-    // TODO: a foglaló app valódi origin-je (pl. https://idopont.lassjol.hu) – enélkül nem fut semmi.
-    bookingOrigins: ["https://REPLACE_BOOKING_ORIGIN"],
+    // A foglaló app origin-je (ha egyedi domain lesz, ide fel kell venni az újat is).
+    bookingOrigins: ["https://saintjamesalkalamssagi.lovable.app"],
     storageKey: "sj_attr_v1",
     maxAgeDays: 90,
     paramKeys: [

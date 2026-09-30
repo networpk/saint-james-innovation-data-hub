@@ -1,0 +1,20 @@
+{
+  "name": "saint-james-innovation-data-hub",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx ingestion/src/migrate.ts",
+    "ingest": "tsx ingestion/src/cli.ts",
+    "test": "tsx --test ingestion/src/**/*.test.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -9,7 +9,7 @@
 Add a database migration to the leads funnel. Use the SQL in this message verbatim (create a migration file).
 Do not change existing RLS policies on `leads`. Do not expose quiz_answers, booking notes, birth date, sex or TAJ in any new view.
 
-<illeszd be az integrations/booking-app/0001_attribution_and_events.sql tartalmát>
+<az 0001_attribution_and_events.sql tartalma; a `hub_reader` szerepkör külön, kézzel futtatandó: 0002_hub_reader_role.sql>
 ```
 
 ## 2. prompt – Attribúció rögzítése
