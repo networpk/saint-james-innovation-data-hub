@@ -81,22 +81,67 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 
 ## 4. Integrációk
 
+### 4.1 Windsor.ai – ténylegesen bekötött connectorok (ellenőrizve a Windsor fiókban)
+
+| Connector | Fiók | Szerep a hubban |
+|---|---|---|
+| `facebook` (Meta Ads) | sjameshungary_hu | Fizetett Meta teljesítmény (89+ kampány) |
+| `google_ads` | Saint James (149-137-6230); Saint James Vision and Aesthetics Center (556-030-7472) | Fizetett Google teljesítmény – **két fiók, külön kezelendő** |
+| `tiktok` | Saint James Hospital Hungary Kft. | Fizetett TikTok |
+| `facebook_organic` | Saint James Eye Clinic Budapest | Organikus Facebook: elérés, elköteleződés, posztok |
+| `instagram` | saintjameshungary | Organikus Instagram + (opcionálisan) posztolás/komment write action |
+| `instagram_public` | saintjameshungary | Nyilvános profil-metrikák, benchmark |
+| `googleanalytics4` | saintjameshungary.hu; Lassjol.hu – GA4 | Weboldali viselkedés, session, konverziós események |
+| `ahrefs` | lassjol.hu; saintjameshungary.hu | SEO: organikus kulcsszavak, pozíciók, backlinkek, versenytárs-domain adatok |
+
+> Megjegyzés: két márka/weboldal látszik (**saintjameshungary.hu** és **lassjol.hu**). A modellben ezért kötelező egy `brand/site` dimenzió, és a szűrőknek is tartalmazniuk kell.
+
+**Hogyan illeszkednek a hubba**
+- **Social organikus (Facebook, Instagram)** → `fact_organic_post_daily`; a posztok is kapnak **tartalmi pillér** címkét, így a fizetett és organikus tartalom **ugyanazon pillér-tengelyen** összehasonlítható (mi működik organikusan → mit érdemes hirdetni).
+- **GA4** → `fact_web_session_daily` + események (űrlap-kitöltés, foglalási lépések); a weboldali funnel és a hirdetés→lead bizonyítékok kiegészítője.
+- **Ahrefs** → `fact_seo_daily` (organikus forgalom-becslés, kulcsszó-pozíciók, backlink-növekedés, top oldalak). Új felhasználás: **organikus vs. fizetett csatorna-mix**, brand-keyword kannibalizáció figyelése (PPC-költés olyan kulcsszóra, ahol már organikusan első), tartalmi rések a versenytárs-elemzéshez (9. fejezet).
+- **TikTok Ads** → a meglévő ad-performance modellbe (`dim_platform = tiktok`).
+- **Írási műveletek** (budget/státusz) csak a fizetett connectorokra (facebook, google_ads, tiktok) mennek, a 8. fejezet szabályai szerint. Az organikus és SEO connectorok **csak olvasásra** valók.
+
+### 4.2 Egyéb integrációk
+
 | Integráció | Szerep | Irány | Megjegyzés |
 |---|---|---|---|
-| **Windsor.ai** | Meta Ads, Google Ads (+ GA4, organic, később TikTok/LinkedIn) egységes elérése | Olvasás + (jóváhagyással) írás | Connector-ek: `facebook`, `google_ads`, `instagram` stb. Az írási műveleteket (budget, státusz) a `list_actions` adja – csak megerősítéssel futtatjuk. |
-| **DocuRex API** | Foglalások, vendég/lead azonosító, státuszok, időpontok, érték | Olvasás | Meglévő API-kapcsolat. **Kulcskérdés:** milyen azonosító köti össze a lead-et és a foglalást (e-mail hash, lead ID, UTM, GCLID/FBCLID). |
-| **Weboldal lead-ek** | Lead űrlap, UTM-ek, click ID-k | Bejövő (webhook) | Ha a lead már DocuRex-ben is megjelenik, ott is lehet a forrás – ezt tisztázni kell. |
-| **GA4** (javasolt) | Session/esemény, kiegészítő attribúciós jel | Olvasás | Windsoron át elérhető. |
-| **Meta Ad Library / versenytárs források** | Versenytárs hirdetések | Olvasás | 2. fázis, lásd 9. fejezet. |
+| **Időpontfoglaló app (Lovable, GitHub)** | **A weboldali leadek belépési pontja** – részletesen a 4.3 fejezetben | Olvasás (+ esetleg saját módosítás) | Kulcs a lead-életút végigkövetéséhez |
+| **DocuRex API** | Foglalások, vendég/lead azonosító, státuszok, időpontok, érték | Olvasás | Meglévő API-kapcsolat. A lead→foglalás összekötés kulcsa a foglaló app által rögzített azonosító. |
 | **Claude API** | Agent + javaslatmagyarázat | – | Csak strukturált, lekérdezett adatot kap. |
-| **Lovable/Supabase Auth** | Belépés, szerepkörök | – | Lásd 11. fejezet. |
+| **Supabase Auth** | Belépés, szerepkörök | – | Lásd 11. fejezet. |
+| **Meta Ad Library / versenytárs források** | Versenytárs hirdetések | Olvasás | 2. fázis, lásd 9. fejezet. |
+
+### 4.3 Az időpontfoglaló app bekötése – lead-életút
+
+**Miért kulcsfontosságú:** a weboldali leadek ezen az appon keresztül érkeznek, tehát itt dől el, hogy a hirdetés→lead→foglalás lánc **követhető-e**. Ha az app a lead létrehozásakor elmenti, honnan jött a látogató, a hub végig tudja vezetni a leadet a hirdetéstől a DocuRex foglalásig.
+
+**Teendők az appban (Lovable/Supabase oldalon):**
+1. **Attribúciós adatok rögzítése a leaden:** `utm_source/medium/campaign/content/term`, `fbclid`, `gclid`, `ttclid`, landing oldal, referrer, GA4 `client_id`, időbélyeg, márka/oldal. A paramétereket az első oldalbetöltéskor el kell menteni (cookie/localStorage), mert a foglalási folyamat több lépés.
+2. **Lead-státuszok eseménynaplója** (`lead_events`): űrlap megnyitva → kitöltve → időpont kiválasztva → beküldve → DocuRex-be átadva → megerősítve / lemondva / megjelent. Ebből számolható a **lemorzsolódás lépésenként**.
+3. **Stabil azonosító** a lead és a DocuRex foglalás között: az app a DocuRex hívásakor átadja/elmenti a saját `lead_id`-t, és visszamenti a DocuRex `booking_id`-t.
+4. **Hirdetési konverzió-visszajelzés (később):** szerver oldali események (Meta CAPI, Google Enhanced Conversions), hogy a platformok **valódi foglalásra** optimalizáljanak, ne csak űrlapra.
+5. **Személyes adatok:** a hubba e-mail/telefon csak **hash-elve** kerüljön; a klinikai jellegű (egészségügyi) adat ne kerüljön át (lásd kockázatok).
+
+**Hogyan kapcsoljuk a hubhoz (két út, az app felépítésétől függ):**
+- **A) Közös Supabase / adatbázis-olvasás:** ha az app Supabase-t használ, a hub read-only nézeteken/szerepkörön keresztül olvassa a `leads` és `lead_events` táblákat (vagy replikálja őket).
+- **B) Webhook/API:** az app minden lead-eseményt egy hub-végpontra (`POST /ingest/lead-event`, aláírt kéréssel) küld. Ez lazábban csatolt, és független az app belső adatmodelljétől.
+- **Javaslat:** **B** kell az eseményekhez (közel valós idejű), **A** jó a meglévő leadek egyszeri backfilljéhez.
+
+**Mit kapunk ettől a hubban:**
+- Teljes **életút-nézet** egy leadre: hirdetés → kattintás → weboldal → űrlap → DocuRex foglalás → megjelenés.
+- **Lemorzsolódás-elemzés** a foglalási folyamat lépései között (melyik lépésnél vesztünk leadet, melyik pillér/kampány leadjei morzsolódnak jobban).
+- Pontos **lead→foglalás átfutás** és megbízható attribúció (click ID egyezés a leaden).
+- **Adatminőség-jelzés:** hány lead érkezik UTM/click ID nélkül.
 
 ---
 
 ## 5. Adatmodell (core réteg, vázlat)
 
 **Dimenziók**
-- `dim_platform` (meta, google, …)
+- `dim_platform` (meta, google, tiktok, facebook_organic, instagram, ga4, ahrefs)
+- `dim_brand_site` (saintjameshungary.hu, lassjol.hu, …)
 - `dim_account`, `dim_campaign`, `dim_adset_adgroup`, `dim_ad` (kreatív)
 - `dim_content_pillar` – tartalmi pillérek (pl. wellness, gasztro, romantikus, családi, rendezvény – **a tényleges listát az ügyféllel kell véglegesíteni**)
 - `dim_content_type` – formátum (videó, carousel, statikus, reels, search RSA stb.)
@@ -105,7 +150,11 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 
 **Tények**
 - `fact_ad_performance_daily` – költés, megjelenés, kattintás, CPC/CPM, platform-konverziók (nap × hirdetés).
-- `fact_lead` – lead ID, időbélyeg, forrás, UTM, click ID-k, landing oldal.
+- `fact_lead` – lead ID, időbélyeg, forrás, UTM, click ID-k (fbclid/gclid/ttclid), GA4 client ID, landing oldal, márka/oldal (**az időpontfoglaló appból**).
+- `fact_lead_event` – a lead lépésenkénti eseményei (űrlap megnyitva → beküldve → DocuRexbe átadva → megjelent).
+- `fact_organic_post_daily` – Facebook/Instagram posztok teljesítménye, pillér-címkével.
+- `fact_web_session_daily` – GA4 session és eseményadatok.
+- `fact_seo_daily` – Ahrefs: organikus forgalom, kulcsszó-pozíciók, backlinkek.
 - `fact_booking` – DocuRex foglalás ID, létrehozás/érkezés időpont, státusz (megerősített/lemondott), érték.
 - `fact_lead_booking_link` – a két tény összekötése + **attribúciós módszer és bizonyosság** (pl. „click ID egyezés", „e-mail egyezés", „csak UTM").
 - `fact_budget_change_log` – minden budgetváltozás (kézi, javasolt, automatikus) indoklással és jóváhagyóval.
@@ -219,8 +268,8 @@ Példakérdések: „Melyik pillér hozta a legtöbb foglalást szeptemberben é
 | Fázis | Tartalom | Kimenet | Becsült idő* |
 |---|---|---|---|
 | **0 – Discovery** | Kérdések tisztázása (13. fejezet), DocuRex API felmérése, Windsor fiókok/connectorok, pillér-lista, KPI-definíciók | Jóváhagyott specifikáció, adatszótár | 1–2 hét |
-| **1 – Alapok (MVP-adat)** | Repó/infra, Supabase séma, Windsor ingestion (Meta+Google, napi szint), backfill, adatminőség-monitor | Napi frissülő `fact_ad_performance_daily` | 2–3 hét |
-| **2 – Lead↔foglalás** | DocuRex + lead ingestion, match-lánc, átfutási idő, pillér-mapping tábla | Első valós „költés → foglalás" riport | 3–4 hét |
+| **1 – Alapok (MVP-adat)** | Repó/infra, Supabase séma, Windsor ingestion (Meta, Google – 2 fiók, TikTok, napi szint; majd GA4, organic, Ahrefs), backfill, adatminőség-monitor | Napi frissülő `fact_ad_performance_daily` | 2–3 hét |
+| **2 – Lead↔foglalás** | **Időpontfoglaló app audit és módosítás (UTM/click ID rögzítés, lead_events, webhook)**, DocuRex ingestion, match-lánc, átfutási idő, pillér-mapping tábla | Első valós „költés → foglalás" riport | 3–4 hét |
 | **3 – Dashboard v1** | API + Lovable UI: overview, kampány, pillér, funnel, szűrők, időhorizontok | Használható belső dashboard | 3–4 hét (párhuzamos) |
 | **4 – Intelligencia** | Stratégia-felismerés, napi javaslat motor, anomália-jelzés, javaslat-inbox | Napi ajánlások | 3–4 hét |
 | **5 – AI agent** | Tool-réteg, chat UI, forrás-hivatkozás, hatókör-tesztek | Adat-alapú chat | 2–3 hét |
@@ -230,15 +279,15 @@ Példakérdések: „Melyik pillér hozta a legtöbb foglalást szeptemberben é
 
 \*Durva becslés 1–2 fős csapatra; a Discovery eredményétől függően módosul. **A Fázis 1–3 adja a legnagyobb üzleti értéket, ezt érdemes gyorsan kézbe venni.**
 
-**Javasolt első sprint (konkrét):** Windsor-fiók és connectorok ellenőrzése → Supabase séma → Meta+Google napi ingestion → egy „költés/lead/CPL" nézet Lovable-ben.
+**Javasolt első sprint (konkrét):** Időpontfoglaló app repó átnézése (mit rögzít ma) → Supabase séma → Meta+Google napi ingestion → egy „költés/lead/CPL" nézet Lovable-ben.
 
 ---
 
 ## 13. Feltételezések és nyitott kérdések (kérlek erősítsd meg / egészítsd ki)
 
-1. **„ANCP" = MCP**, azaz a Windsor.ai MCP/API integrációról van szó? Milyen csomag/fiók van, és mely connectorok aktívak?
+1. **Windsor:** a connectorok ellenőrizve (4.1). Milyen csomag van, és szükséges-e további connector (pl. LinkedIn, Bing, `facebook_leads`, Search Console)? Az „ANCP" szerintem MCP – jó?
 2. **DocuRex:** milyen adatot ad vissza az API (foglalás ID, létrehozás/érkezés dátum, státusz, érték, vendég-azonosító)? Van webhook? Hogyan köthető a foglalás a weboldali lead-hez?
-3. **Lead-forrás:** az űrlapadat hol él (weboldal-CMS, DocuRex, CRM)? Rögzítjük az UTM-eket és click ID-kat?
+3. **Időpontfoglaló app:** melyik GitHub repó? Milyen backendet használ (Supabase?), mit rögzít ma a leadről (UTM, click ID)? Mindkét weboldal (saintjameshungary.hu, lassjol.hu) ezt használja? Hogyan adja át a foglalást a DocuRexnek?
 4. **Tartalmi pillérek:** milyen pillérek vannak ma, és van-e egységes kampány-elnevezés? A meglévő 89+ kampányt kell-e visszamenőleg besorolni?
 5. **„Konstruktív jostatok"** = *konstruktív javaslatok* (napi ajánlások)? Milyen döntésekhez kellenek elsősorban (budget, kreatívcsere, célzás)?
 6. **„Manuális mód":** a 7. fejezet értelmezése helyes (stratégia-felismerés, kézi vs. automatizált kampányvezérlés)?
