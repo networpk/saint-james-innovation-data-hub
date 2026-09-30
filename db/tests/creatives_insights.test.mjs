@@ -16,6 +16,7 @@ async function setup() {
     business_line text, category text, subcategory text, class_source text)`);
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
+  await db.exec(sql("0007_fix_click_gap.sql"));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -119,4 +120,13 @@ test("az RLS-fájl Supabase-szerű szerepkörökkel hibátlanul lefut, és a lá
   await db.exec("reset role; set role authenticated");
   const r = await db.query("select count(*)::int as n from mart_funnel_daily");
   assert.equal(r.rows[0].n, 0);
+});
+
+test("GA4-adat nélkül nincs téves kattintás→látogató riasztás", async () => {
+  const db = await setup();
+  await cls(db, "meta", "m1", "mc1", "LASSJOL - LÉZER - Traffic");
+  for (let i = 0; i < 30; i++)
+    await db.query(`insert into fact_ad_performance_daily(date,platform,account_id,campaign_id,spend,impressions,clicks) values ($1,'meta','m1','mc1',10000,4000,200)`, [day(i)]);
+  const keys = (await db.query("select insight_key from insights($1::date, 14)", [ASOF])).rows.map((r) => r.insight_key);
+  assert.ok(!keys.includes("click_session_gap"), keys.join(","));
 });
