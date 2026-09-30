@@ -115,6 +115,8 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 
 ### 4.3 Az időpontfoglaló app bekötése – lead-életút
 
+> **Az app átvizsgálva** (`networpk/saintjamesalkalamssagi`): részletes leírás, hiányosságok és módosítási lista → [`idopontfoglalo-integracio.md`](idopontfoglalo-integracio.md). Fő megállapítások: (1) az app jelenleg **nem rögzít UTM-et/click ID-t**, (2) a **Dokirex** (=DocuRex) `elojegyzesId` csak szabad szövegben tárolódik a leaden, (3) a Hub Supabase-pull útján olvashatja az adatokat.
+
 **Miért kulcsfontosságú:** a weboldali leadek ezen az appon keresztül érkeznek, tehát itt dől el, hogy a hirdetés→lead→foglalás lánc **követhető-e**. Ha az app a lead létrehozásakor elmenti, honnan jött a látogató, a hub végig tudja vezetni a leadet a hirdetéstől a DocuRex foglalásig.
 
 **Teendők az appban (Lovable/Supabase oldalon):**
@@ -287,7 +289,7 @@ Példakérdések: „Melyik pillér hozta a legtöbb foglalást szeptemberben é
 
 1. **Windsor:** a connectorok ellenőrizve (4.1). Milyen csomag van, és szükséges-e további connector (pl. LinkedIn, Bing, `facebook_leads`, Search Console)? Az „ANCP" szerintem MCP – jó?
 2. **DocuRex:** milyen adatot ad vissza az API (foglalás ID, létrehozás/érkezés dátum, státusz, érték, vendég-azonosító)? Van webhook? Hogyan köthető a foglalás a weboldali lead-hez?
-3. **Időpontfoglaló app:** melyik GitHub repó? Milyen backendet használ (Supabase?), mit rögzít ma a leadről (UTM, click ID)? Mindkét weboldal (saintjameshungary.hu, lassjol.hu) ezt használja? Hogyan adja át a foglalást a DocuRexnek?
+3. **Időpontfoglaló app:** melyik GitHub repó? Milyen backendet használ (Supabase?), mit rögzít ma a leadről (UTM, click ID)? Mindkét weboldal (saintjameshungary.hu, lassjol.hu) ezt használja? (Megválaszolva: az app Edge Function-ön át hívja a Dokirex API-t.)
 4. **Tartalmi pillérek:** milyen pillérek vannak ma, és van-e egységes kampány-elnevezés? A meglévő 89+ kampányt kell-e visszamenőleg besorolni?
 5. **„Konstruktív jostatok"** = *konstruktív javaslatok* (napi ajánlások)? Milyen döntésekhez kellenek elsősorban (budget, kreatívcsere, célzás)?
 6. **„Manuális mód":** a 7. fejezet értelmezése helyes (stratégia-felismerés, kézi vs. automatizált kampányvezérlés)?
