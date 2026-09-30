@@ -10,6 +10,9 @@ const ASOF = day(29); // 30 napos adat, a vizsgálati ablak vége
 
 async function setup() {
   const db = new PGlite();
+  await db.exec("create role anon nologin; create role authenticated nologin;");
+  await db.exec("grant usage on schema public to anon, authenticated");
+  await db.exec("alter default privileges in schema public grant all on tables to anon, authenticated");
   await db.exec(sql("0001_core.sql"));
   await db.exec(sql("0002_kpi_targets.sql"));
   await db.exec(`create table campaign_class (platform text, account_id text, campaign_id text, campaign_name text,
@@ -17,6 +20,7 @@ async function setup() {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql"]) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -198,4 +202,50 @@ test("kampány↔forgalom: a Meta azonosító-alapú és név-alapú UTM-je is i
   assert.deepEqual(un.map((r) => r.campaign), ["teljesen ismeretlen kampány"]);
   const map = (await db.query("select business_line from ga_property_map where account_id='490259280'")).rows[0];
   assert.equal(map.business_line, "eszteika_plasztika");
+});
+
+test("kulcsszó-összesítő, kifejezés-összesítő, keresés és téma-idővonal", async () => {
+  const db = await setup();
+  await cls(db, "google", "g1", "gc1", "GSN - Lézeres szemműtét /konvmax", "szemeszet");
+  await cls(db, "meta", "m1", "mc1", "LASSJOL - LÉZER - Traffic", "szemeszet");
+  for (let i = 0; i < 10; i++) {
+    const d = day(i);
+    await db.query(`insert into fact_keyword_daily(date,account_id,campaign_id,ad_group_id,keyword_text,match_type,impressions,clicks,spend,conversions) values
+      ($1,'g1','gc1','ag','lézeres szemműtét','',100,10,1500,1), ($1,'g1','gc1','ag','szemüveg nélkül','',50,3,500,0)`, [d]);
+    await db.query(`insert into fact_search_term_daily(date,account_id,campaign_id,ad_group_id,search_term,impressions,clicks,spend,conversions) values
+      ($1,'g1','gc1','ag','lézeres szemműtét 50 év felett',20,4,600,0.5), ($1,'g1','gc1','ag','lézeres szemműtét',10,2,300,0)`, [d]);
+    await db.query(`insert into fact_ad_performance_daily(date,platform,account_id,campaign_id,spend,impressions,clicks) values ($1,'meta','m1','mc1',8000,3000,120)`, [d]);
+  }
+  const ks = (await db.query("select * from keyword_summary($1::date,$2::date,null,null,'szemeszet','lezeres',null,0,50,0)", [day(0), day(9)])).rows;
+  assert.equal(ks.length, 1);
+  assert.equal(ks[0].keyword_text, "lézeres szemműtét");
+  assert.equal(ks[0].topic, "lezer");
+  assert.equal(Number(ks[0].spend), 15000);
+  assert.equal(Number(ks[0].cost_per_conversion), 1500);
+  assert.equal(Number(ks[0].ctr), 0.1);
+  const kp = (await db.query("select * from keyword_summary($1::date,$2::date,$3::date,$4::date,null,null,null,0,50,0)", [day(5), day(9), day(0), day(4)])).rows;
+  assert.equal(Number(kp[0].spend_prev), 7500);
+  const st = (await db.query("select * from search_term_summary($1::date,$2::date,null,'50 ev',null,50,0)", [day(0), day(9)])).rows;
+  assert.equal(st.length, 1);
+  assert.equal(st[0].is_keyword, false);
+  const gs = (await db.query("select kind, label from global_search('LÉZER', 5)")).rows.map((r) => r.kind + ":" + r.label);
+  assert.ok(gs.some((x) => x.startsWith("keyword:lézeres")), gs.join("|"));
+  assert.ok(gs.some((x) => x.startsWith("campaign:LASSJOL")), gs.join("|"));
+  assert.ok(gs.some((x) => x.startsWith("topic:")), gs.join("|"));
+  const tl = (await db.query("select * from topic_timeline('lezer',$1::date,$2::date)", [day(0), day(9)])).rows;
+  assert.equal(tl.length, 10);
+  assert.equal(Number(tl[0].meta_spend), 8000);
+  assert.equal(Number(tl[0].google_kw_impressions), 100); // csak a „lézeres szemműtét” kulcsszó tartozik a témához
+  const kd = (await db.query("select * from keyword_daily('lézeres szemműtét',$1::date,$2::date)", [day(0), day(9)])).rows;
+  assert.equal(kd.length, 10);
+});
+
+test("a GA4 mikro-események (telefon, foglalás, űrlap-kezdés) bekerülnek a forrás-nézetbe", async () => {
+  const db = await setup();
+  await db.query(`insert into fact_web_daily(date,account_id,source,medium,channel_group,campaign,sessions) values ($1,'312872101','google','cpc','Paid Search','GSN - Brand',100)`, [ASOF]);
+  await db.query(`insert into fact_web_event_daily(date,account_id,event_name,source,medium,campaign,event_count) values
+    ($1,'312872101','phone_click','google','cpc','GSN - Brand',5), ($1,'312872101','sikeres_foglalas','google','cpc','GSN - Brand',2),
+    ($1,'312872101','form_start','google','cpc','GSN - Brand',8), ($1,'312872101','idopont_foglalas_katt','google','cpc','GSN - Brand',11)`, [ASOF]);
+  const r = (await db.query("select * from mart_source_conversion_daily")).rows[0];
+  assert.deepEqual([r.phone_clicks, r.booking_success, r.form_starts, r.booking_clicks].map(Number), [5, 2, 8, 11]);
 });
