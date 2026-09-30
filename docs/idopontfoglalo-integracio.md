@@ -91,10 +91,15 @@ Data Hub: fact_lead, fact_lead_event, fact_booking, fact_lead_booking_link
 - **A weboldalon van Meta Pixel és GA4** – ezek a *szülő oldalon* futnak, nem az iframe-ben (az iframe-ben jelenleg nincs pixel/gtag) → lásd 6.1.
 - **Két üzletág, ugyanaz a Saint James márka:** szemészet és esztétika/plasztika → a modellben `business_line` dimenzió kell (lásd 6.2).
 
+**Frissítés (legutóbbi egyeztetés)**
+- **Hatókör: egyelőre csak a szemészet.** Az esztétika/plasztika később jön; a `business_line` dimenziót ezért most is felvesszük (alapérték: `szemeszet`), de nem építünk hozzá külön forrást. Ezzel a 3. nyitott kérdés lezárva.
+- **GA4 már be van kötve a Windsorban** (két property: saintjameshungary.hu, Lassjol.hu). Ez az *aggregált* weboldali riportot adja. A **lead-szintű** összekötéshez (melyik GA4 session → melyik lead) továbbra is kell a `client_id`/`session_id` átadása az iframe-nek (6.1), de ez már csak kiegészítő jel, nem blokkoló.
+- **Lovable-kapcsolat él.** A workspace-ben két releváns projekt van: **Saint James ALkalmassági** (a foglaló/kvíz app, `4e4a2d01-…`, ugyanaz, mint a GitHub-repó) és **Saint James Clarity** (`02b7b4cd-…`, szemészeti landing oldal). A Clarity oldalon **nincs Pixel/GA4, nincs iframe, és az űrlapja csak demó** (nem küld sehová) – tehát a valódi, Pixelt/GA4-et futtató weboldal (ahova az iframe be van ágyazva) nem ez; valószínűleg a saintjameshungary.hu / lassjol.hu CMS-e. Ezt még egyeztetni kell.
+
 **Még nyitott**
 1. **Dokirex API – státusz és bevétel.** Az appban csak a kezelés-lista, a szabad időpont és a foglalás hívás szerepel; a státusz-végpont létezését a Dokirex dokumentációjában vagy a szállítónál kell ellenőrizni (keresendő: előjegyzés lekérdezése `elojegyzesId` alapján, státusz: megjelent/lemondva/nem jelent meg, számla/bevétel). Amíg ez nincs meg, a Hub a foglalásig (nem a megjelenésig) tud követni.
 2. **Melyik domain/üzletág melyik?** A Windsor-ban két weboldal van (*saintjameshungary.hu*, *lassjol.hu*), és két Google Ads fiók (*Saint James*, *Saint James Vision and Aesthetics Center*). Kérlek add meg a pontos megfeleltetést: domain → üzletág → Meta/Google/GA4 fiók.
-3. **Az esztétika/plasztika üzletág leadjei honnan érkeznek?** Az app **kizárólag szemészeti** időpontokat kínál (a `dokirex` függvény fixen csak a „Szemészet” szakrendelést listázza). Ha az esztétika is ebbe az iframe-be megy, vagy külön űrlap/foglaló van, az másik adatforrás, és külön be kell kötni.
+3. ~~Az esztétika/plasztika üzletág leadjei honnan érkeznek?~~ (későbbi fázis) Az app **kizárólag szemészeti** időpontokat kínál (a `dokirex` függvény fixen csak a „Szemészet” szakrendelést listázza). Ha az esztétika is ebbe az iframe-be megy, vagy külön űrlap/foglaló van, az másik adatforrás, és külön be kell kötni.
 4. Az iframe-et beágyazó oldalakat (WordPress/egyéb CMS?) ki tudjuk-e egészíteni egy kis script-tel (tag manager)?
 5. Egészségügyi jellegű mezők (`quiz_answers`, foglalási megjegyzés) kizárása a Hub-exportból – jóváhagyod?
 6. Az app Supabase projektje külön marad a Hub-étól? (Javaslat: igen, a Hub pull-lal olvassa.)
