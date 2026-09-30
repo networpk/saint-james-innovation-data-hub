@@ -432,10 +432,11 @@ language sql stable as $$
     join adj b on b.signal <> a.signal and b.dt = a.dt + l.lag
     group by a.signal, b.signal, l.lag
   )
-  select sa, sb, lag, round(r::numeric, 4), n,
-         round((r * sqrt((n - 2)::numeric / nullif(1 - r * r, 0)))::numeric, 2)
-  from pairs
-  where n >= p_min_n and r is not null
+  select sa, sb, lag, round(rc::numeric, 4), n,
+         case when abs(rc) >= 0.999999 then (sign(rc) * 999)::numeric
+              else round((rc * sqrt((n - 2)::numeric / (1 - rc * rc)))::numeric, 2) end
+  from (select pairs.*, greatest(-1::double precision, least(1::double precision, r)) as rc from pairs) c
+  where n >= greatest(p_min_n, 3) and r is not null
 $$;
 
 -- Páronként a legerősebb késleltetés (|r| szerint), a legerősebb kapcsolatok elöl.
@@ -445,7 +446,10 @@ create or replace function signal_correlations_best(
 ) returns table (signal_a text, signal_b text, lag_days int, r numeric, n int, t_stat numeric, r_lag0 numeric)
 language sql stable as $$
   with c as (select * from signal_correlations(p_from, p_to, p_max_lag, p_detrend, p_min_n)),
-  best as (select distinct on (signal_a, signal_b) * from c order by signal_a, signal_b, abs(r) desc)
+  -- azonos családba tartozó (egymást tartalmazó) jelek párosítása triviális, ezeket kihagyjuk
+  best as (select distinct on (signal_a, signal_b) * from c
+           where split_part(signal_a, '_', 1) <> split_part(signal_b, '_', 1)
+           order by signal_a, signal_b, abs(r) desc)
   select b.signal_a, b.signal_b, b.lag_days, b.r, b.n, b.t_stat,
          (select c0.r from c c0 where c0.signal_a = b.signal_a and c0.signal_b = b.signal_b and c0.lag_days = 0) as r_lag0
   from best b
