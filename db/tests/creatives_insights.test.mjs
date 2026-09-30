@@ -166,3 +166,36 @@ test("forrás szerinti konverzió: szerves és direkt forgalom is benne van, az 
   await db.exec("set role anon");
   await assert.rejects(() => db.query("select * from mart_source_conversion_daily"), /permission denied/);
 });
+
+test("kampány↔forgalom: a Meta azonosító-alapú és név-alapú UTM-je is illeszkedik, összeadva és duplázás nélkül", async () => {
+  const db = new PGlite();
+  await db.exec("create role anon nologin; create role authenticated nologin;");
+  await db.exec("grant usage on schema public to anon, authenticated");
+  await db.exec("alter default privileges in schema public grant all on tables to anon, authenticated");
+  for (const f of ["0001_core.sql", "0002_kpi_targets.sql"]) await db.exec(sql(f));
+  await db.exec(`create table campaign_class (platform text, account_id text, campaign_id text, campaign_name text,
+    business_line text, category text, subcategory text, class_source text)`);
+  for (const f of ["0004_analytics_v2.sql", "0005_creatives_insights.sql", "0007_fix_click_gap.sql", "0008_source_conversion.sql", "0009_campaign_join_ids.sql"]) await db.exec(sql(f));
+  await cls(db, "meta", "m1", "120243705267400714", "LASSJOL - RLE - Traffic");
+  await cls(db, "google", "g1", "gc1", "GSN - Brand /konvmax");
+  await db.query(`insert into fact_ad_performance_daily(date,platform,account_id,campaign_id,spend,impressions,clicks) values
+    ($1,'meta','m1','120243705267400714',10000,5000,300), ($1,'google','g1','gc1',5000,300,40)`, [ASOF]);
+  await db.query(`insert into fact_web_daily(date,account_id,source,medium,channel_group,campaign,sessions) values
+    ($1,'312872101','facebook','cpc','Paid Social','LASSJOL - RLE - Traffic',100),
+    ($1,'312872101','facebook','cpc','Paid Social','120243705267400714',200),
+    ($1,'312872101','fb','paid','Paid Social','120243705267400714',30),
+    ($1,'312872101','google','cpc','Paid Search','GSN - Brand /konvmax',50),
+    ($1,'312872101','facebook','cpc','Paid Social','teljesen ismeretlen kampány',7)`, [ASOF]);
+  await db.query(`insert into fact_web_event_daily(date,account_id,event_name,source,medium,campaign,event_count) values
+    ($1,'312872101','soft_conv_foglaljon','facebook','cpc','LASSJOL - RLE - Traffic',4),
+    ($1,'312872101','soft_conv_foglaljon','facebook','cpc','120243705267400714',6)`, [ASOF]);
+  const rows = (await db.query("select campaign_id, sessions, soft_leads from mart_campaign_funnel_daily order by campaign_id")).rows;
+  const m = rows.find((r) => r.campaign_id === "120243705267400714");
+  assert.equal(Number(m.sessions), 330);     // 100 név + 200 + 30 azonosító
+  assert.equal(Number(m.soft_leads), 10);
+  assert.equal(Number(rows.find((r) => r.campaign_id === "gc1").sessions), 50);
+  const un = (await db.query("select campaign, sessions from mart_web_campaign_unmatched")).rows;
+  assert.deepEqual(un.map((r) => r.campaign), ["teljesen ismeretlen kampány"]);
+  const map = (await db.query("select business_line from ga_property_map where account_id='490259280'")).rows[0];
+  assert.equal(map.business_line, "eszteika_plasztika");
+});
