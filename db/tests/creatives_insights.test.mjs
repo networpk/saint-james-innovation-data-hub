@@ -20,7 +20,7 @@ async function setup() {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql"]) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql"]) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -324,4 +324,72 @@ test("SEO: gyors nyeremény, fizetett–szerves átfedés, SEO-rés, kannibaliz�
   // RLS: látogató nem éri el
   await db.exec("set role anon");
   await assert.rejects(() => db.query("select * from seo_opportunities(null)"), /permission denied/);
+});
+
+test("értesítési központ: adatminőségi riasztás, deduplikálás, halasztás, várakozási idő, automatikus megoldódás, jogosultság", async () => {
+  const db = await setup();
+  const NOW = "2026-09-30T12:00:00Z";
+  // betöltés: 2 napja futott utoljára sikeresen (elavult), és egy másik hibára futott
+  await db.query(`insert into ingestion_run(job,started_at,finished_at,status) values ('ads', '2026-09-28T06:00:00Z','2026-09-28T06:05:00Z','ok')`);
+  await db.query(`insert into ingestion_run(job,started_at,finished_at,status,error) values ('ga4', '2026-09-30T06:00:00Z','2026-09-30T06:01:00Z','error','quota exceeded')`);
+  // leadek: a megelőző héten 12, az utolsó héten 3 (visszaesés), mind forrás nélkül
+  for (let i = 0; i < 12; i++) await db.query(`insert into fact_lead(lead_id,created_at,updated_at,source) values (gen_random_uuid(), '2026-09-20T10:00:00Z','2026-09-20T10:00:00Z','quiz')`);
+  for (let i = 0; i < 3; i++) await db.query(`insert into fact_lead(lead_id,created_at,updated_at,source) values (gen_random_uuid(), '2026-09-28T10:00:00Z','2026-09-28T10:00:00Z','quiz')`);
+
+  const r1 = (await db.query("select * from refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW])).rows[0];
+  assert.ok(Number(r1.created) >= 3, `létrejött: ${JSON.stringify(r1)}`);
+  const keys = (await db.query("select insight_key, severity from alert order by insight_key")).rows.map((r) => r.insight_key);
+  for (const k of ["ingestion_stale", "ingestion_error", "lead_drop"]) assert.ok(keys.includes(k), `hiányzik: ${k}; van: ${keys}`);
+  assert.ok(keys.includes("lead_utm_gap"));
+
+  // deduplikálás: második frissítés nem hoz létre újat
+  const before = Number((await db.query("select count(*) n from alert")).rows[0].n);
+  const r2 = (await db.query("select * from refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW])).rows[0];
+  assert.equal(Number(r2.created), 0);
+  assert.equal(Number((await db.query("select count(*) n from alert")).rows[0].n), before);
+
+  // kézbesítési sor: a kritikus azonnali, majd kiküldés után eltűnik
+  const q = (await db.query("select id, immediate, insight_key from alert_to_notify")).rows;
+  assert.ok(q.some((r) => r.insight_key === "lead_drop" && r.immediate === true));
+  assert.ok(!q.some((r) => r.insight_key === "lead_utm_gap"), "a nem értesítős szabály nem kerül a sorba");
+  await db.query("select alerts_mark_notified($1)", [q.map((r) => r.id)]);
+  assert.equal((await db.query("select * from alert_to_notify")).rows.length, 0);
+
+  // számlálók
+  const c = (await db.query("select * from alert_counts()")).rows[0];
+  assert.ok(Number(c.unread) >= 4 && Number(c.critical) >= 1);
+
+  // halasztás: a postaládából eltűnik, lejárat után visszajön
+  const drop = (await db.query("select id from alert where insight_key='lead_drop'")).rows[0].id;
+  await db.query("select alert_set_status($1,'snoozed',3)", [drop]);
+  assert.ok(!(await db.query("select 1 from alert_inbox where id=$1", [drop])).rows.length);
+  await db.query("update alert set snoozed_until = now() - interval '1 hour' where id=$1", [drop]);
+  assert.ok((await db.query("select 1 from alert_inbox where id=$1", [drop])).rows.length, "lejárt halasztás után látszik");
+  await db.query("update alert set snoozed_until = '2026-09-29T00:00:00Z' where id=$1", [drop]);
+  await db.query("select refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW]);
+  assert.equal((await db.query("select status from alert where id=$1", [drop])).rows[0].status, "open");
+
+  // kézzel megoldott riasztás a várakozási időn belül nem tér vissza, utána igen
+  await db.query("select alert_set_status($1,'resolved')", [drop]);
+  await db.query("update alert set resolved_at = $2::timestamptz - interval '1 day' where id=$1", [drop, NOW]);
+  await db.query("select refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW]);
+  assert.equal((await db.query("select status from alert where id=$1", [drop])).rows[0].status, "resolved");
+  await db.query("update alert set resolved_at = $2::timestamptz - interval '10 days' where id=$1", [drop, NOW]);
+  await db.query("select refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW]);
+  assert.equal((await db.query("select status from alert where id=$1", [drop])).rows[0].status, "open");
+
+  // automatikus megoldódás: sikeres futás után az elavult-riasztás megszűnik
+  await db.query(`insert into ingestion_run(job,started_at,finished_at,status) values ('ads','2026-09-30T08:00:00Z','2026-09-30T08:05:00Z','ok')`);
+  await db.query("select refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW]);
+  const st = (await db.query("select status, auto_resolved from alert where insight_key='ingestion_stale'")).rows[0];
+  assert.equal(st.status, "resolved");
+  assert.equal(st.auto_resolved, true);
+
+  // jogosultság: látogató nem olvas, bejelentkezett olvas de közvetlenül nem ír
+  await db.exec("set role anon");
+  await assert.rejects(db.query("select * from alert"));
+  await db.exec("reset role; set role authenticated");
+  assert.ok((await db.query("select * from alert")).rows.length > 0);
+  await assert.rejects(db.query("update alert set status='resolved'"));
+  await db.exec("reset role");
 });
