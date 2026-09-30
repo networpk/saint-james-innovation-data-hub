@@ -123,7 +123,7 @@ Egyetlen helyre összefolyatjuk a Saint James Hungary **hirdetési költés- és
 1. **Attribúciós adatok rögzítése a leaden:** `utm_source/medium/campaign/content/term`, `fbclid`, `gclid`, `ttclid`, landing oldal, referrer, GA4 `client_id`, időbélyeg, márka/oldal. A paramétereket az első oldalbetöltéskor el kell menteni (cookie/localStorage), mert a foglalási folyamat több lépés.
 2. **Lead-státuszok eseménynaplója** (`lead_events`): űrlap megnyitva → kitöltve → időpont kiválasztva → beküldve → DocuRex-be átadva → megerősítve / lemondva / megjelent. Ebből számolható a **lemorzsolódás lépésenként**.
 3. **Stabil azonosító** a lead és a DocuRex foglalás között: az app a DocuRex hívásakor átadja/elmenti a saját `lead_id`-t, és visszamenti a DocuRex `booking_id`-t.
-4. **Hirdetési konverzió-visszajelzés (később):** szerver oldali események (Meta CAPI, Google Enhanced Conversions), hogy a platformok **valódi foglalásra** optimalizáljanak, ne csak űrlapra.
+4. **Nincs platform-konverzió visszajelzés:** egészségügyi korlátozások miatt a Meta/Google felé nem küldünk foglalási eseményt; a mérés first-party, az optimalizálás a Hub adataiból történik (budget, kreatív, pillér).
 5. **Személyes adatok:** a hubba e-mail/telefon csak **hash-elve** kerüljön; a klinikai jellegű (egészségügyi) adat ne kerüljön át (lásd kockázatok).
 
 **Hogyan kapcsoljuk a hubhoz (két út, az app felépítésétől függ):**

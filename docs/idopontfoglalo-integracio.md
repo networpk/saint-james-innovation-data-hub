@@ -113,8 +113,8 @@ Az iframe külön origin, ezért **nem látja** a szülő oldal URL-jét, UTM-je
    - az iframe `src`-jéhez hozzáfűzi a paramétereket (`/idopont?utm_source=…&fbclid=…&ga_cid=…&fbp=…`) – ez megbízható, még ha a `postMessage` el is késik;
    - `postMessage` üzenet (`{type:"sj-attribution", …}`), amelyet az app csak az engedélyezett szülő origin-ekről fogad el (origin-ellenőrzés kötelező).
 3. **Az app oldalán** az `attribution.ts` modul először a query-paramétereket olvassa, aztán a `postMessage`-et, és a `leads` sorral együtt menti.
-4. **Fordított irány – események a szülő oldal felé** (`postMessage`): az app a fő lépéseknél (`lead`, `booking_confirmed`) üzenetet küld a szülőnek, amely a **szülő Pixelen és GA4-en** keresztül elsüti a `Lead` / `Schedule` (Meta) és `generate_lead` / `booking_confirmed` (GA4) eseményt. Így a platformok is látják a konverziót, és a GA4 funnel is teljes lesz.
-5. **Később: Meta CAPI és Google Enhanced Conversions** szerver oldalról, az `_fbp/_fbc` és hash-elt e-mail/telefon alapján, **deduplikációs `event_id`-val** (ugyanaz az ID megy a Pixelnek és a CAPI-nak).
+4. **Platform-konverziók nincsenek.** Egészségügyi hirdetésnél a Meta felé nem küldünk Pixel/CAPI konverziót (a célzás és a mérés is korlátozott, és egészségügyi adat nem mehet platformnak). A mérés kizárólag first-party: UTM + click ID + saját lead + Dokirex foglalás, a Hubban összekötve.
+5. **`_fbp/_fbc` átadása nem szükséges**, csak az UTM-ek, `fbclid`/`gclid` és (opcionálisan) a GA4 `client_id`.
 6. **Hozzájárulás (consent):** a Pixel/GA4 használata és az azonosítók tárolása cookie-hozzájáruláshoz kötött. A szülő script csak akkor adhat át `_fbp/_fbc/client_id` értéket, ha a látogató a marketing/analitika sütiket elfogadta – az UTM-ek (nem személyes) átadhatók.
 
 ### 6.2 Üzletág-dimenzió
@@ -129,6 +129,6 @@ Az iframe külön origin, ezért **nem látja** a szülő oldal URL-jét, UTM-je
 2. `leads_export` nézet + Hub-oldali ingestion.
 3. **C + D** (eseménynapló, kvíz-összekötés).
 4. Dokirex státusz-szinkron.
-5. Szerver oldali konverziók (Meta CAPI / Google).
+5. (Elvetve) Szerver oldali platform-konverziók – egészségügyi korlátozások miatt nem alkalmazzuk.
 
 **Fontos:** az 1. lépés *után* érkező leadekre lesz attribúciónk; a meglévő leadek (UTM nélkül) csak becsülhetők (időablak + GA4/Windsor adatok alapján), ezért érdemes az 1. lépést minél előbb élesíteni.
