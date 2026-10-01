@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -620,5 +620,53 @@ test("ActiveCampaign: kampánynevek és e-mail tartalom, automatizmus-lépcső f
 
   await db.exec("set role anon");
   await assert.rejects(db.query("select * from dim_ac_message"));
+  await db.exec("reset role");
+});
+
+test("dataLayer-események: új tölcsér-szintek, GA4–saját egyeztetés, lefedettség és riasztás", async () => {
+  const db = await setup();
+  const stages = (await db.query("select event_name, stage from funnel_event_map where stage like 'dl_%' order by 1")).rows;
+  assert.ok(stages.some((r) => r.event_name === "appointment_booked" && r.stage === "dl_booked"));
+  assert.equal(stages.length, 7);
+  await assert.rejects(db.query("insert into funnel_event_map(event_name,stage) values ('x','nincs')"));
+  // a régi leképezés érintetlen
+  assert.equal((await db.query("select stage from funnel_event_map where event_name='generate_lead'")).rows[0].stage, "ga_hard_lead");
+
+  const NOW = "2026-10-08T12:00:00Z";
+  const lead = (n, at, stage, last) => db.query(
+    `insert into fact_lead(lead_id,created_at,updated_at,source,booking_stage,booking_progress) values (gen_random_uuid(),$1,$1,'booking',$2,$3)`,
+    [at, stage, JSON.stringify({ lastStep: last })]);
+  // 8 foglalás és 2 visszahívás a héten, 4 félbehagyott
+  for (let i = 0; i < 8; i++) await lead(i, "2026-10-03T10:00:00Z", "completed", "done");
+  for (let i = 0; i < 2; i++) await lead(i, "2026-10-04T10:00:00Z", "completed", "callback");
+  for (let i = 0; i < 4; i++) await lead(i, "2026-10-05T10:00:00Z", "contact", "calendar");
+  await db.query(`insert into ga_property_map(account_id,site,business_line) values ('312872101','lassjol.hu','szemeszet') on conflict do nothing`);
+  const ev = (d, name, n) => db.query(`insert into fact_web_event_daily(date,account_id,event_name,event_count) values ($1,'312872101',$2,$3)`, [d, name, n]);
+
+  // az új mérés még nem él: nincs lefedettség-riasztás
+  await ev("2026-10-03", "generate_lead", 5);
+  assert.ok(!(await db.query("select 1 from tracking_alerts($1::timestamptz)", [NOW])).rows.length);
+
+  // él, de a GA4 a 8 foglalásból csak 1-et lát
+  await ev("2026-10-03", "appointment_booked", 1);
+  await ev("2026-10-04", "callback_requested", 2);
+  const rec = (await db.query("select * from mart_tracking_reconciliation where date='2026-10-03'")).rows[0];
+  assert.equal(Number(rec.db_booked), 8);
+  assert.equal(Number(rec.ga_booked), 1);
+  assert.equal(Number(rec.db_leads), 8);
+  assert.equal(Number(rec.ga_generate_lead), 5);
+  const cov = Object.fromEntries((await db.query("select * from tracking_coverage('2026-10-01','2026-10-08',null)")).rows.map((r) => [r.event, r]));
+  assert.equal(Number(cov.lead.db_count), 14);
+  assert.ok(Math.abs(Number(cov.foglalas.coverage) - 1 / 8) < 1e-9);
+  assert.equal(Number(cov.visszahivas.coverage), 1);
+  const al = (await db.query("select * from tracking_alerts($1::timestamptz)", [NOW])).rows;
+  assert.equal(al.length, 1);
+  assert.equal(al[0].insight_key, "tracking_coverage");
+  assert.ok((await db.query("select 1 from data_quality_alerts($1::timestamptz) where insight_key='tracking_coverage'", [NOW])).rows.length === 1);
+  // jó lefedettségnél nincs riasztás
+  await ev("2026-10-05", "appointment_booked", 6);
+  assert.ok(!(await db.query("select 1 from tracking_alerts($1::timestamptz)", [NOW])).rows.length);
+  await db.exec("set role anon");
+  await assert.rejects(db.query("select * from mart_tracking_reconciliation"));
   await db.exec("reset role");
 });

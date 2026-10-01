@@ -11,6 +11,10 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 - **Lovable PART 13–15:** „Ma/Tegnap" előbeállítás, ActiveCampaign réteg felülete, e-mail megtekintő és automatizmus-lépcső, teljesítmény-javítás.
 - **Windsor:** a próbaidő lejárta előtt fizetős csomag kell.
 
+## [0018] dataLayer-események és mérés-egyeztetés – `db/migrations/0018_datalayer_events.sql`
+- A foglaló új eseményei (`appointment_booked`, `callback_requested`, lépés-események) bekerülnek a tölcsérbe.
+- Napi egyeztetés a saját adatbázis és a GA4 között, lefedettség-mutató és riasztás (a GA4 hozzájárulás-függő, a saját adatbázis marad az igazság).
+
 ## [0017] ActiveCampaign: e-mail tartalom és automatizmus-lépcső – `db/migrations/0017_ac_emails_flow.sql`
 - Kiküldött e-mailek tartalma (tárgy, előnézeti szöveg, HTML) és a kampányok valódi nevei (`campaign_label`), a `#434`-szerű azonosítók helyett.
 - Automatizmus-lépcső: hányan jutnak el az n. lépésig, forrás szerinti bontásban (`ac_flow_steps`, `ac_flow_by_source`), az automatizmus e-mailjeivel (`ac_flow_emails`).
