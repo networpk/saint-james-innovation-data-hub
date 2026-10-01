@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -722,4 +722,14 @@ test("cron-riasztás: hibázó ütemezett feladat riasztást ad, cron nélkül n
   await db.query("delete from cron.job_run_details where jobid = 1");
   await db.query("select refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW]);
   assert.equal((await db.query("select status from alert where insight_key='cron_failing'")).rows[0].status, "resolved");
+});
+
+test("schema_selfcheck: minden elvárt objektum megvan, és a hiány kiderül", async () => {
+  const db = await setup();
+  const all = (await db.query("select * from schema_selfcheck()")).rows;
+  assert.ok(all.length >= 20);
+  assert.equal((await db.query("select count(*)::int n from schema_missing()")).rows[0].n, 0);
+  await db.exec("drop view lead_google_campaign");
+  const miss = (await db.query("select migration, object_name from schema_missing()")).rows;
+  assert.deepEqual(miss, [{ migration: "0019", object_name: "lead_google_campaign" }]);
 });

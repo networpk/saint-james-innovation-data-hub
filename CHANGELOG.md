@@ -13,7 +13,11 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 
 ## Foglaló: dataLayer-események (Lovable foglaló projekt, `b49a357`) – publikálásra vár
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
-- A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; dokumentáció és GTM-útmutató: `docs/foglalo-tracking-es-gtm-utmutato.md`.
+- A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; a GTM-útmutató külön dokumentumként nincs a repóban.
+
+## [0021] Önellenőrzés és riasztás-hangolás – `db/migrations/0021_selfcheck_tuning.sql`
+- `schema_selfcheck()` és `schema_missing()`: kimutatja, ha egy migrációból hiányzik egy objektum (a korábbi 0018-as kimaradás mintájára).
+- A `click_session_gap` küszöbe 100→300 kattintás és 0,6→0,35 arány: a GA4 hozzájárulás miatti alulmérés ne adja a riasztások felét (21 a 44-ből).
 
 ## [0020] Ütemezett feladatok hibáira riasztás – `db/migrations/0020_cron_alerts.sql`
 - Élő ellenőrzéskor kiderült, hogy az `ingest-leads`, `ingest-ac`, `ingest-alerts` és `ingest-seo` cron-hívások elbuknak („unknown ingest route"), így a leadek és az ActiveCampaign-adatok nem frissültek. Az új riasztás a `cron.job_run_details` hibáit figyeli.
