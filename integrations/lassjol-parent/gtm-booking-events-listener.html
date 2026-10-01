@@ -1,0 +1,26 @@
+<!-- GTM > Tags > New > Custom HTML. Név: "Lovable Booking - iframe event listener"
+     Trigger: Initialization - All Pages (vagy csak ahol a foglaló be van ágyazva).
+     Csak EGYSZER legyen a weboldalon (ne GTM és Elementor egyszerre).
+     Megjegyzés: a meglévő "sj-attribution" címke más üzenettípust kezel (type: "sj-attribution"), ezért nem ütköznek. -->
+<script>
+(function () {
+  var BOOKING_ORIGIN = 'https://saintjamesalkalamssagi.lovable.app';
+  var ALLOWED = [
+    'booking_step_view', 'lead_created', 'booking_path_selected', 'callback_requested',
+    'service_selected', 'appointment_slot_selected', 'appointment_booked', 'booking_thankyou_view'
+  ];
+  // csak ezek a mezők mehetnek tovább; személyes adat és lead_id nem
+  var KEYS = ['source', 'event', 'flow_id', 'step', 'path', 'result'];
+
+  window.addEventListener('message', function (event) {
+    if (event.origin !== BOOKING_ORIGIN) return;
+    var d = event.data;
+    if (!d || typeof d !== 'object' || d.source !== 'saint_james_booking') return;
+    if (ALLOWED.indexOf(d.event) === -1) return;
+    var out = {};
+    for (var i = 0; i < KEYS.length; i++) if (d[KEYS[i]] !== undefined) out[KEYS[i]] = d[KEYS[i]];
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push(out);
+  });
+})();
+</script>

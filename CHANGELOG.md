@@ -11,6 +11,10 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 - **Lovable PART 13–15:** „Ma/Tegnap" előbeállítás, ActiveCampaign réteg felülete, e-mail megtekintő és automatizmus-lépcső, teljesítmény-javítás.
 - **Windsor:** a próbaidő lejárta előtt fizetős csomag kell.
 
+## Foglaló: dataLayer-események (Lovable foglaló projekt, `b49a357`) – publikálásra vár
+- Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
+- A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`.
+
 ## [0018] dataLayer-események és mérés-egyeztetés – `db/migrations/0018_datalayer_events.sql`
 - A foglaló új eseményei (`appointment_booked`, `callback_requested`, lépés-események) bekerülnek a tölcsérbe.
 - Napi egyeztetés a saját adatbázis és a GA4 között, lefedettség-mutató és riasztás (a GA4 hozzájárulás-függő, a saját adatbázis marad az igazság).
