@@ -1,24 +1,34 @@
 <!-- GTM > Tags > New > Custom HTML. Név: "Lovable Booking - iframe event listener"
-     Trigger: Initialization - All Pages (vagy csak ahol a foglaló be van ágyazva).
+     Trigger: Initialization - All Pages (vagy csak azokon az oldalakon, ahol a foglaló be van ágyazva).
      Csak EGYSZER legyen a weboldalon (ne GTM és Elementor egyszerre).
-     Megjegyzés: a meglévő "sj-attribution" címke más üzenettípust kezel (type: "sj-attribution"), ezért nem ütköznek. -->
+     A meglévő "sj-attribution" címke más üzenettípust kezel (type: "sj-attribution"), ezért nem ütköznek.
+     Verzió: 2026-10-01, a foglaló app src/lib/bookingTracking.ts (b49a357) kimenetéhez igazítva. -->
 <script>
 (function () {
-  var BOOKING_ORIGIN = 'https://saintjamesalkalamssagi.lovable.app';
+  if (window.__sjBookingListener) return; // dupla betöltés ellen
+  window.__sjBookingListener = true;
+
+  // Ezekről az origin-ekről fogadunk üzenetet. Egyedi foglaló-domain esetén ide fel kell venni az újat is.
+  var BOOKING_ORIGINS = ['https://saintjamesalkalamssagi.lovable.app'];
+
+  // A foglaló által küldhető események (pontosan a bookingTracking.ts listája).
   var ALLOWED = [
     'booking_step_view', 'lead_created', 'booking_path_selected', 'callback_requested',
     'service_selected', 'appointment_slot_selected', 'appointment_booked', 'booking_thankyou_view'
   ];
-  // csak ezek a mezők mehetnek tovább; személyes adat és lead_id nem
+
+  // Csak ezek a mezők mennek tovább a dataLayerbe; személyes adat és lead_id nem.
   var KEYS = ['source', 'event', 'flow_id', 'step', 'path', 'result'];
 
   window.addEventListener('message', function (event) {
-    if (event.origin !== BOOKING_ORIGIN) return;
+    if (BOOKING_ORIGINS.indexOf(event.origin) === -1) return;
     var d = event.data;
     if (!d || typeof d !== 'object' || d.source !== 'saint_james_booking') return;
     if (ALLOWED.indexOf(d.event) === -1) return;
     var out = {};
-    for (var i = 0; i < KEYS.length; i++) if (d[KEYS[i]] !== undefined) out[KEYS[i]] = d[KEYS[i]];
+    for (var i = 0; i < KEYS.length; i++) {
+      if (d[KEYS[i]] !== undefined) out[KEYS[i]] = d[KEYS[i]];
+    }
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push(out);
   });
