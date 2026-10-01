@@ -22,6 +22,7 @@
     paramKeys: [
       "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
       "fbclid", "gclid", "wbraid", "gbraid", "ttclid",
+      "gad_source", "gad_campaignid", // a Google automatikus címkézése ezeket is az URL-be teszi (kampányazonosító)
     ],
   };
 

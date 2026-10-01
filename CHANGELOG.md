@@ -15,6 +15,9 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
 - A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; dokumentáció és GTM-útmutató: `docs/foglalo-tracking-es-gtm-utmutato.md`.
 
+## [0019] Google-kampányazonosító a leadből – `db/migrations/0019_google_campaign_id.sql`
+- A Google automatikus címkézése az URL-be teszi a `gad_campaignid` paramétert; a `sj-attribution` szkript átadja a foglalónak, a Hub a leadet ezzel köti a Google-kampányhoz (`lead_journey.google_campaign_id`, `lead_google_campaign`), `utm_campaign` nélkül is.
+
 ## [0018] dataLayer-események és mérés-egyeztetés – `db/migrations/0018_datalayer_events.sql`
 - A foglaló új eseményei (`appointment_booked`, `callback_requested`, lépés-események) bekerülnek a tölcsérbe.
 - Napi egyeztetés a saját adatbázis és a GA4 között, lefedettség-mutató és riasztás (a GA4 hozzájárulás-függő, a saját adatbázis marad az igazság).

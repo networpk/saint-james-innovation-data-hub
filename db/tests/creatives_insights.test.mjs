@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -668,5 +668,30 @@ test("dataLayer-események: új tölcsér-szintek, GA4–saját egyeztetés, lef
   assert.ok(!(await db.query("select 1 from tracking_alerts($1::timestamptz)", [NOW])).rows.length);
   await db.exec("set role anon");
   await assert.rejects(db.query("select * from mart_tracking_reconciliation"));
+  await db.exec("reset role");
+});
+
+test("Google-kampányazonosító (gad_campaignid) a leadből: oszlop a lead-életútban és összekötés a kampánnyal", async () => {
+  const db = await setup();
+  await cls(db, "google", "g1", "23005482141", "Perf.Max - Lézeres szemműtét");
+  const ins = (n, click) => db.query(
+    `insert into fact_lead(lead_id,created_at,updated_at,source,booking_stage,click_ids,booking_progress) values ($1,'2026-10-01T09:00:00Z','2026-10-01T09:00:00Z','booking','contact',$2,'{"lastStep":"contact"}')`,
+    [`00000000-0000-0000-0000-0000000003${String(n).padStart(2, "0")}`, click ? JSON.stringify(click) : null]);
+  await ins(1, { gclid: "x", gad_campaignid: "23005482141", gad_source: "1" });
+  await ins(2, { gclid: "y" });
+  await ins(3, { gad_campaignid: "999" });
+  const j = Object.fromEntries((await db.query("select lead_id, google_campaign_id, click_id_type from lead_journey")).rows.map((r) => [r.lead_id.slice(-2), r]));
+  assert.equal(j["01"].google_campaign_id, "23005482141");
+  assert.equal(j["01"].click_id_type, "gclid");
+  assert.equal(j["02"].google_campaign_id, null);
+  const g = (await db.query("select lead_id, campaign_name from lead_google_campaign order by lead_id")).rows;
+  assert.equal(g.length, 2, "csak a gad_campaignid-s leadek");
+  assert.equal(g[0].campaign_name, "Perf.Max - Lézeres szemműtét");
+  assert.equal(g[1].campaign_name, null, "ismeretlen azonosító: név nélkül, de nem vész el");
+  // a korábbi nézetek továbbra is működnek (lead_journey_ac, összesítő)
+  assert.equal(Number((await db.query("select count(*) n from lead_journey_ac")).rows[0].n), 3);
+  assert.equal(Number((await db.query("select leads from lead_ac_summary('2026-10-01','2026-10-01',null)")).rows[0].leads), 3);
+  await db.exec("set role anon");
+  await assert.rejects(db.query("select * from lead_google_campaign"));
   await db.exec("reset role");
 });
