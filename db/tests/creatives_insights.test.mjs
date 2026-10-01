@@ -8,7 +8,7 @@ const sql = (f) => fs.readFileSync(new URL(f, dir), "utf8");
 const day = (i) => new Date(Date.UTC(2026, 8, 1 + i)).toISOString().slice(0, 10); // 2026-09-01 + i
 const ASOF = day(29); // 30 napos adat, a vizsgálati ablak vége
 
-async function setup() {
+async function setup(skip = []) {
   const db = new PGlite();
   await db.exec("create role anon nologin; create role authenticated nologin;");
   await db.exec("grant usage on schema public to anon, authenticated");
@@ -20,7 +20,7 @@ async function setup() {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql"]) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -530,5 +530,95 @@ test("ActiveCampaign: lead-összekötés hash alapján, automatizmus-előrehalad
   await db.exec("set role anon");
   await assert.rejects(db.query("select * from lead_ac"));
   await assert.rejects(db.query("select * from fact_ac_contact"));
+  await db.exec("reset role");
+});
+
+test("teljesítmény: az új korrelációs motor és jel-nézet ugyanazt adja, mint a régi; a szűrt hívás a teljes részhalmaza", async () => {
+  const oldDb = await setup(["0016_performance.sql"]);
+  const newDb = await setup();
+  let seed = 11; const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const spend = Array.from({ length: 70 }, () => 50000 + Math.round(rnd() * 100000));
+  for (const db of [oldDb, newDb]) {
+    seed = 11; for (let i = 0; i < 70; i++) rnd();
+    seed = 11;
+    for (let i = 0; i < 70; i++) {
+      const brand = i >= 3 ? Math.round(spend[i - 3] / 1000 * 3 + (i % 5)) : 10;
+      await db.query(`insert into fact_ad_performance_daily(date,platform,account_id,campaign_id,spend,impressions,clicks) values ($1,'meta','a','c1',$2,1000,10), ($1,'tiktok','t','c2',$3,500,5)`, [day(i), spend[i], 20000 + (i % 7) * 1000]);
+      await db.query(`insert into fact_keyword_daily(date,account_id,campaign_id,ad_group_id,keyword_text,match_type,impressions,clicks,spend) values ($1,'g','k1','ag','saint james','',$2,1,100), ($1,'g','k1','ag','lézer ár','',$3,2,200)`, [day(i), brand, 50 + (i % 9)]);
+      await db.query(`insert into fact_web_daily(date,account_id,source,medium,channel_group,sessions) values ($1,'312872101','(direct)','(none)','Direct',$2)`, [day(i), 200 + (i * 7) % 90]);
+    }
+  }
+  const q = "select signal_a, signal_b, lag_days, r, n, t_stat, r_lag0 from signal_correlations_best($1::date,$2::date,14,true,14,2.5) order by 1,2";
+  const a = (await oldDb.query(q, [day(0), day(69)])).rows;
+  const b = (await newDb.query(q, [day(0), day(69)])).rows;
+  assert.ok(a.length > 0);
+  assert.deepEqual(b, a, "a teljes korrelációs lista azonos");
+  const sig = async (db) => (await db.query("select date::text d, signal, value::text v from mart_signals_long order by 1,2,3")).rows;
+  assert.deepEqual(await sig(newDb), await sig(oldDb), "a jel-nézet azonos");
+  // szűrt hívás = a teljes lista megfelelő részhalmaza
+  const f = (await newDb.query(
+    "select signal_a, signal_b, lag_days, r, n, t_stat, r_lag0 from signal_correlations_best($1::date,$2::date,10,true,28,3.0, array['spend_meta','spend_tiktok'], array['google_brand_impressions']) order by 1,2", [day(0), day(69)])).rows;
+  const full = (await newDb.query(
+    "select signal_a, signal_b, lag_days, r, n, t_stat, r_lag0 from signal_correlations_best($1::date,$2::date,10,true,28,3.0) where signal_a in ('spend_meta','spend_tiktok') and signal_b = 'google_brand_impressions' order by 1,2", [day(0), day(69)])).rows;
+  assert.deepEqual(f, full);
+  assert.ok(f.some((r) => r.signal_a === "spend_meta" && r.lag_days === 3));
+  // az észrevételek hatás-szabálya továbbra is működik; a nézet megtartja a hívó jogait
+  const ins = (await newDb.query("select insight_key from insights($1::date, 14)", [day(69)])).rows.map((r) => r.insight_key);
+  assert.ok(Array.isArray(ins));
+  assert.match(String((await newDb.query("select reloptions::text r from pg_class where relname='mart_signals_long'")).rows[0].r), /security_invoker=true/);
+});
+
+test("ActiveCampaign: kampánynevek és e-mail tartalom, automatizmus-lépcső forrás szerint", async () => {
+  const db = await setup();
+  const U = (n) => `00000000-0000-0000-0000-0000000002${String(n).padStart(2, "0")}`;
+  await db.query(`insert into dim_ac_automation(automation_id,name) values (95,'Lassjol-Új-Páciens-Flow')`);
+  await db.query(`insert into dim_ac_message(message_id,name,subject,preheader,from_name,html) values (7,'Üdvözlő','Köszönjük a jelentkezést','Nézd meg a következő lépést','Saint James','<p>Szia</p>')`);
+  await db.query(`insert into dim_ac_campaign(campaign_id,label,campaign_type,automation_id,base_message_id,sent_at) values (50,'Üdvözlő e-mail','single',95,7,'2026-09-20T08:00:00Z'), (51,null,'single',null,null,'2026-09-21T08:00:00Z')`);
+  await db.query(`insert into fact_ac_campaign_snapshot(snapshot_date,campaign_id,name,sent_at,status,send_amt,unique_opens,unique_link_clicks,unsubscribes,hard_bounces)
+    values ('2026-09-30',50,'',  '2026-09-20T08:00:00Z','5',200,100,20,2,1), ('2026-09-30',51,'','2026-09-21T08:00:00Z','5',100,40,4,0,0)`);
+  const camps = Object.fromEntries((await db.query("select campaign_id::text id, name, subject, automation_name from mart_ac_campaign_performance")).rows.map((r) => [r.id, r]));
+  assert.equal(camps["50"].name, "Üdvözlő e-mail");
+  assert.equal(camps["50"].subject, "Köszönjük a jelentkezést");
+  assert.equal(camps["50"].automation_name, "Lassjol-Új-Páciens-Flow");
+  assert.equal(camps["51"].name, "#51", "név nélkül az azonosító");
+  const em = (await db.query("select * from ac_campaign_email(50)")).rows[0];
+  assert.equal(em.html, "<p>Szia</p>");
+  assert.equal(em.preheader, "Nézd meg a következő lépést");
+  assert.equal((await db.query("select * from ac_flow_emails(95)")).rows.length, 1);
+
+  // leadek és AC-névjegyek: 2 Facebook, 1 Google (click id), 1 AC-űrlap (nincs lead)
+  const lead = (n, hash, utm, click) => db.query(`insert into fact_lead(lead_id,created_at,updated_at,source,email_hash,utm,click_ids) values ($1,'2026-09-10T10:00:00Z','2026-09-10T10:00:00Z','quiz',$2,$3,$4)`, [U(n), hash, utm ? JSON.stringify(utm) : null, click ? JSON.stringify(click) : null]);
+  await lead(1, "f1", { utm_source: "facebook" }); await lead(2, "f2", { utm_source: "facebook" }); await lead(3, "g1", null, { gclid: "x" });
+  await db.query(`insert into fact_ac_contact(ac_contact_id,email_hash,channel) values (1,'f1',null),(2,'f2',null),(3,'g1',null),(4,'z9','Weboldal űrlap')`);
+  // mélység (17 lépéses automatizmus): FB: 17 (kész), 5; Google: 2; űrlap: 17 (kész)
+  const mem = (id, c, depth, removed) => db.query(`insert into fact_ac_contact_automation(id,ac_contact_id,automation_id,added_at,removed_at,completed_elements,total_elements,completed) values ($1,$2,95,'2026-09-15T10:00:00Z',$3,$4,17,$5)`, [id, c, removed, depth, depth === 17]);
+  await mem(1, 1, 17, "2026-09-18T10:00:00Z"); await mem(2, 2, 5, null); await mem(3, 3, 2, null); await mem(4, 4, 17, "2026-09-18T10:00:00Z");
+
+  const src = Object.fromEntries((await db.query("select ac_contact_id::text id, source from ac_contact_source")).rows.map((r) => [r.id, r.source]));
+  assert.deepEqual(src, { 1: "facebook", 2: "facebook", 3: "gclid", 4: "Weboldal űrlap" });
+
+  const steps = (await db.query("select * from ac_flow_steps(95)")).rows;
+  assert.equal(steps.length, 18, "0..17");
+  assert.equal(Number(steps[0].reached), 4);
+  assert.equal(Number(steps[2].reached), 4, "mind a négyen elérték a 2. lépést");
+  assert.equal(Number(steps[3].reached), 3);
+  assert.equal(Number(steps[3].lost_from_previous), 1);
+  assert.equal(Number(steps[17].reached), 2);
+  assert.equal(Number(steps[17].pct_of_entered), 0.5);
+  const fbOnly = (await db.query("select * from ac_flow_steps(95, null, null, 'facebook')")).rows;
+  assert.equal(Number(fbOnly[6].reached), 1);
+  assert.equal(Number(fbOnly[5].reached), 2);
+
+  const by = Object.fromEntries((await db.query("select * from ac_flow_by_source(95)")).rows.map((r) => [r.source, r]));
+  assert.equal(Number(by.facebook.entered), 2);
+  assert.equal(Number(by.facebook.avg_depth), 11);
+  assert.equal(Number(by.facebook.finished), 1);
+  assert.equal(Number(by.gclid.pct_finished), 0);
+  assert.equal(Number(by["Weboldal űrlap"].pct_finished), 1);
+  assert.equal((await db.query("select * from ac_flow_by_source(95,'2026-10-01',null)")).rows.length, 0, "dátumszűrő");
+  assert.equal(Number((await db.query("select members from mart_ac_automation_overview where automation_id=95")).rows[0].members), 4);
+
+  await db.exec("set role anon");
+  await assert.rejects(db.query("select * from dim_ac_message"));
   await db.exec("reset role");
 });
