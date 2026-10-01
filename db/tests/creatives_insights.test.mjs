@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -694,4 +694,32 @@ test("Google-kampányazonosító (gad_campaignid) a leadből: oszlop a lead-éle
   await db.exec("set role anon");
   await assert.rejects(db.query("select * from lead_google_campaign"));
   await db.exec("reset role");
+});
+
+test("cron-riasztás: hibázó ütemezett feladat riasztást ad, cron nélkül nincs hiba", async () => {
+  const db = await setup();
+  const NOW = "2026-10-01T13:00:00Z";
+  // pg_cron nélküli környezetben (mint a tesztben) üresen tér vissza
+  assert.equal((await db.query("select * from cron_alerts($1::timestamptz)", [NOW])).rows.length, 0);
+  assert.equal((await db.query("select * from data_quality_alerts($1::timestamptz) where insight_key='cron_failing'", [NOW])).rows.length, 0);
+
+  await db.exec("create schema cron; create table cron.job(jobid int primary key, jobname text); create table cron.job_run_details(jobid int, status text, return_message text, start_time timestamptz)");
+  await db.query("insert into cron.job values (1,'ingest-leads-15min'),(2,'ingest-web-every-3h'),(3,'ingest-ac-hourly')");
+  for (let i = 0; i < 6; i++) await db.query("insert into cron.job_run_details values (1,'failed','ERROR: unknown ingest route ingest-leads',$1::timestamptz - make_interval(mins => $2))", [NOW, i * 15]);
+  await db.query("insert into cron.job_run_details values (2,'succeeded','1 row',$1::timestamptz - interval '20 minutes')", [NOW]);
+  await db.query("insert into cron.job_run_details values (3,'failed','ERROR: egyszeri',$1::timestamptz - interval '10 minutes')", [NOW]); // csak 1 hiba: küszöb alatt
+  await db.query("insert into cron.job_run_details values (3,'failed','régi hiba',$1::timestamptz - interval '5 hours')", [NOW]); // ablakon kívül
+
+  const a = (await db.query("select * from cron_alerts($1::timestamptz)", [NOW])).rows;
+  assert.equal(a.length, 1);
+  assert.equal(a[0].scope_id, "ingest-leads-15min");
+  assert.equal(a[0].severity, "critical");
+  assert.match(a[0].detail, /unknown ingest route/);
+  const r = (await db.query("select * from refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW])).rows[0];
+  assert.ok(Number(r.created) >= 1);
+  assert.equal((await db.query("select count(*) n from alert where insight_key='cron_failing'")).rows[0].n, 1);
+  // a hiba megszűnése után (ablakon kívül) magától megoldódik
+  await db.query("delete from cron.job_run_details where jobid = 1");
+  await db.query("select refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW]);
+  assert.equal((await db.query("select status from alert where insight_key='cron_failing'")).rows[0].status, "resolved");
 });

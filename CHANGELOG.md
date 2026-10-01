@@ -15,6 +15,9 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
 - A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; dokumentáció és GTM-útmutató: `docs/foglalo-tracking-es-gtm-utmutato.md`.
 
+## [0020] Ütemezett feladatok hibáira riasztás – `db/migrations/0020_cron_alerts.sql`
+- Élő ellenőrzéskor kiderült, hogy az `ingest-leads`, `ingest-ac`, `ingest-alerts` és `ingest-seo` cron-hívások elbuknak („unknown ingest route"), így a leadek és az ActiveCampaign-adatok nem frissültek. Az új riasztás a `cron.job_run_details` hibáit figyeli.
+
 ## [0019] Google-kampányazonosító a leadből – `db/migrations/0019_google_campaign_id.sql`
 - A Google automatikus címkézése az URL-be teszi a `gad_campaignid` paramétert; a `sj-attribution` szkript átadja a foglalónak, a Hub a leadet ezzel köti a Google-kampányhoz (`lead_journey.google_campaign_id`, `lead_google_campaign`), `utm_campaign` nélkül is.
 
