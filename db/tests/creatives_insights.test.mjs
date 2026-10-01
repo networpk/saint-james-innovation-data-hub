@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -432,7 +432,7 @@ test("lead-életút: alkalmassági és foglalási leadek szétválasztva, félbe
   assert.equal(Number(s.booked), 1);
   assert.equal(Number(s.abandoned), 1);
   assert.equal(Number(s.callbacks), 1);
-  assert.ok(Math.abs(Number(s.completion_rate) - 1 / 3) < 1e-9);
+  assert.ok(Math.abs(Number(s.completion_rate) - 2 / 3) < 1e-9); // végigvitt = foglalt + visszahívás
   assert.equal(Number(s.median_seconds_booked), 300);
   assert.equal(Number(s.median_seconds_abandoned), 200);
   assert.equal(Number(s.median_hours_quiz_to_booking), 48);
@@ -656,7 +656,7 @@ test("dataLayer-események: új tölcsér-szintek, GA4–saját egyeztetés, lef
   assert.equal(Number(rec.db_leads), 8);
   assert.equal(Number(rec.ga_generate_lead), 5);
   const cov = Object.fromEntries((await db.query("select * from tracking_coverage('2026-10-01','2026-10-08',null)")).rows.map((r) => [r.event, r]));
-  assert.equal(Number(cov.lead.db_count), 14);
+  assert.equal(Number(cov.lead.db_count), 10); // csak az elküldött adat számít leadnek (a 4 vázlat nem)
   assert.ok(Math.abs(Number(cov.foglalas.coverage) - 1 / 8) < 1e-9);
   assert.equal(Number(cov.visszahivas.coverage), 1);
   const al = (await db.query("select * from tracking_alerts($1::timestamptz)", [NOW])).rows;
@@ -759,4 +759,59 @@ test("csendes hibák: megakadt futás lezárása és nem 2xx HTTP-válaszok rias
   assert.deepEqual(a.map((r) => [r.scope_id, Number(r.impact)]), [["401", 2]]); // az 500 csak 1 db: küszöb alatt
   assert.equal((await db.query("select * from data_quality_alerts($1::timestamptz) where insight_key='http_failing'", [NOW])).rows.length, 1);
   assert.equal((await db.query("select count(*)::int n from schema_missing()")).rows[0].n, 0);
+});
+
+test("lead-életút: elküldte az adatait és végigvitte szétválasztva, személy-szinten a legjobb kimenet számít", async () => {
+  const db = await setup();
+  const N = (n) => `00000000-0000-0000-0000-0000000004${String(n).padStart(2, "0")}`;
+  const ins = (n, at, stage, last, hash, dok = null) => db.query(
+    `insert into fact_lead(lead_id,created_at,updated_at,source,booking_stage,booking_progress,email_hash,dokirex_booking_id,result_type)
+     values ($1,$2,$2,'booking',$3,$4,$5,$6,'booking')`,
+    [N(n), at, stage, last ? JSON.stringify({ lastStep: last, totalSeconds: 100 }) : null, hash, dok]);
+  // A: elküldte az adatait (confirm-ig jutott), pár óra múlva újra, és foglalt  -> 1 személy, foglalt
+  await ins(1, "2026-10-01T06:46:00Z", "completed", "confirm", "A");
+  await ins(2, "2026-10-01T09:38:00Z", "completed", "done", "A", 777);
+  // B: elküldte az adatait, a kezelésnél abbahagyta -> elküldte, nem vitte végig
+  await ins(3, "2026-10-01T10:00:00Z", "completed", "treatment", "B");
+  // C: visszahívást kért
+  await ins(4, "2026-10-01T11:00:00Z", "completed", "callback", "C");
+  // D: nem küldte el az adatait (vázlat), később elküldte és visszahívást kért -> a foglaló összefűzi egy sorrá
+  await ins(5, "2026-10-01T12:00:00Z", "completed", "callback", "D");
+  // E: csak vázlat
+  await ins(6, "2026-10-01T13:00:00Z", "contact", null, "E");
+  // F: régi lead haladási adat nélkül, lezárt
+  await ins(7, "2026-10-01T14:00:00Z", "completed", null, "F");
+
+  const j = Object.fromEntries((await db.query("select lead_id, outcome, submitted, finished from lead_journey")).rows.map((r) => [r.lead_id, r]));
+  assert.equal(j[N(1)].outcome, "adatok_elkuldve");
+  assert.equal(j[N(1)].submitted, true);
+  assert.equal(j[N(1)].finished, false);
+  assert.equal(j[N(2)].outcome, "foglalt");
+  assert.equal(j[N(3)].outcome, "adatok_elkuldve");
+  assert.equal(j[N(4)].outcome, "visszahivas");
+  assert.equal(j[N(6)].outcome, "felbehagyta");
+  assert.equal(j[N(6)].submitted, false);
+  assert.equal(j[N(7)].outcome, "adatok_elkuldve");
+
+  const s = (await db.query("select * from lead_journey_summary('2026-10-01','2026-10-01',null)")).rows[0];
+  // sor-szint
+  assert.equal(Number(s.booking_starts), 7);
+  assert.equal(Number(s.rows_submitted), 6);
+  assert.equal(Number(s.rows_finished), 3);
+  assert.equal(Number(s.booked), 1);
+  // személy-szint: A foglalt, B elküldte, C visszahívás, D visszahívás, E vázlat, F elküldte
+  assert.equal(Number(s.people_started), 6);
+  assert.equal(Number(s.people_submitted), 5);
+  assert.equal(Number(s.people_finished), 3);
+  assert.equal(Number(s.people_booked), 1);
+  assert.equal(Number(s.people_callbacks), 2);
+  assert.equal(Number(s.people_submitted_unfinished), 2);
+  assert.equal(Number(s.people_not_submitted), 1);
+  assert.ok(Math.abs(Number(s.submit_rate) - 5 / 6) < 1e-9);
+  assert.ok(Math.abs(Number(s.finish_rate) - 3 / 5) < 1e-9);
+
+  // lépésidő: a megerősítésnél elakadt/elküldött lead a „nem végigvitt" csoportba kerül
+  const st = Object.fromEntries((await db.query("select * from lead_step_time('2026-10-01','2026-10-01',null)")).rows.map((r) => [r.step, r]));
+  assert.equal(Number(st.treatment.dropped_here), 1);
+  assert.equal(Number(st.confirm.dropped_here), 1);
 });

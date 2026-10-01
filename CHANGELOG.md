@@ -1,6 +1,6 @@
 # Változásnapló – Saint James Innovation Data Hub
 
-Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 27 sikeres teszt).
+Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 28 sikeres teszt).
 
 A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonalak) készülnek; a migrációkat a Lovable a rögzített commitból, ellenőrzőösszeggel futtatja.
 
@@ -14,6 +14,12 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 ## Foglaló: dataLayer-események (Lovable foglaló projekt, `b49a357`) – publikálásra vár
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
 - A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; a GTM-útmutató külön dokumentumként nincs a repóban.
+
+## [0023] Lead-életút: „elküldte az adatait" és „végigvitte" szétválasztva – `db/migrations/0023_lead_outcomes.sql`
+- Korábban a foglaló Küldés gombja (az első képernyő hozzájárulásokkal) már „foglalt" kimenetnek számított, pedig a lead ekkor még csak elküldte az adatait. Ma így a Hub 13 végigvittet mutatott, miközben csak 2 foglalás volt.
+- Új kimenetek: **foglalt** (Dokirex-azonosító vagy „Kész" lépés), **visszahívást kért**, **elküldte az adatait** (de nem vitte végig), **félbehagyta** (nem küldte el az adatait). „Végigvitte" = foglalt + visszahívás.
+- Személy-szintű számok (e-mail/telefon hash): ha valaki először elküldte az adatait, később foglalt, egy személynek számít, a legjobb kimenettel. A sor-szintű számok megmaradnak.
+- A GA4-egyeztetésben a „lead" mostantól az elküldött adat, a „foglalás" a valódi foglalás.
 
 ## [0022] Csendes hibák – `db/migrations/0022_silent_failures.sql`
 - Az `invoke_ingest` hívása a cron szerint „sikeres" volt akkor is, ha a betöltő 401/500-at adott. Új `http_alerts()`: a `net._http_response` nem 2xx válaszaira és időtúllépéseire kritikus riasztás (`http_failing`, küszöb: 2 hiba / 3 óra).

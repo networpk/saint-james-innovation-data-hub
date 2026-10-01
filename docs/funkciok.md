@@ -9,7 +9,7 @@ Az alábbi lista a jelenlegi állapotot írja le, funkciónként: mire való, ho
 - **Korreláció és csatorna-együttmozgás:** késleltetett összefüggés a jelek között; csak jelzés, nem bizonyíték az okságra.
 
 ## Leadek és foglalás
-- **Lead-életút:** az alkalmassági (kvíz) leadek és az időpontfoglalások külön; végigvitte / félbehagyta / visszahívást kért; lépésenkénti idő; ugyanaz a személy összekötve hash alapján (e-mail nem tárolódik).
+- **Lead-életút:** az alkalmassági (kvíz) leadek és az időpontfoglalások külön. A foglalás két szintje: **elküldte az adatait** (az első képernyő Küldése, ez a lead) és **végigvitte** (időpontot foglalt vagy visszahívást kért). Kimenetek: foglalt, visszahívást kért, elküldte az adatait de nem vitte végig, félbehagyta (nem küldte el). Egy személy (e-mail/telefon hash, e-mail nem tárolódik) egyszer számít, a legjobb kimenetelével; a sorok a listában megmaradnak. Lépésenkénti idő és lemorzsolódás.
 - **Forrás-attribúció:** a lassjol.hu GTM-szkriptje átadja a foglalónak az UTM-et és a click id-kat (gclid, gbraid, ttclid, fbclid, gad_campaignid); a Hub ebből köti a leadet a hirdetéshez. Utolsó érintés, 90 nap.
 - **Google-kampány a leadből:** a `gad_campaignid` alapján a lead UTM nélkül is a Google-kampányhoz kapcsolódik.
 
