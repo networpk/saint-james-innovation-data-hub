@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql", "0024_booking_definition.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -814,4 +814,27 @@ test("lead-életút: elküldte az adatait és végigvitte szétválasztva, szem�
   const st = Object.fromEntries((await db.query("select * from lead_step_time('2026-10-01','2026-10-01',null)")).rows.map((r) => [r.step, r]));
   assert.equal(Number(st.treatment.dropped_here), 1);
   assert.equal(Number(st.confirm.dropped_here), 1);
+});
+
+test("foglalás-definíció: a rögzített időpont is foglalás, a visszahívás nem", async () => {
+  const db = await setup();
+  const N = (n) => `00000000-0000-0000-0000-0000000005${String(n).padStart(2, "0")}`;
+  const ins = (n, stage, last, bdate, dok, hash) => db.query(
+    `insert into fact_lead(lead_id,created_at,updated_at,source,booking_stage,booking_progress,booking_date,dokirex_booking_id,email_hash,result_type,business_line)
+     values ($1,'2026-10-01T10:00:00Z','2026-10-01T10:00:00Z','booking',$2,$3,$4,$5,$6,'booking','szemeszet')`,
+    [N(n), stage, last ? JSON.stringify({ lastStep: last }) : null, bdate, dok, hash]);
+  await ins(1, "completed", "calendar", "2026-10-20", null, "A");   // régi: időpont rögzítve, nincs azonosító -> foglalt
+  await ins(2, "completed", "done", "2026-10-21", 901, "B");        // azonosítóval -> foglalt
+  await ins(3, "completed", "callback", "2026-10-22", null, "C");   // visszahívás: nem foglalás, ha van is dátuma
+  await ins(4, "completed", "treatment", null, null, "D");          // csak elküldte az adatait
+  const j = Object.fromEntries((await db.query("select lead_id, outcome from lead_journey")).rows.map((r) => [r.lead_id, r.outcome]));
+  assert.equal(j[N(1)], "foglalt");
+  assert.equal(j[N(2)], "foglalt");
+  assert.equal(j[N(3)], "visszahivas");
+  assert.equal(j[N(4)], "adatok_elkuldve");
+  const f = (await db.query("select sum(booked_web) b, sum(hard_leads) h from mart_funnel_daily where date='2026-10-01'")).rows[0];
+  assert.equal(Number(f.b), 2);
+  assert.equal(Number(f.h), 4);
+  const s = (await db.query("select value from mart_signals_long where signal='booked_web' and date='2026-10-01'")).rows[0];
+  assert.equal(Number(s.value), 2);
 });
