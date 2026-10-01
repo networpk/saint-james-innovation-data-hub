@@ -1,6 +1,6 @@
 # Változásnapló – Saint James Innovation Data Hub
 
-Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 22 sikeres teszt).
+Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 27 sikeres teszt).
 
 A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonalak) készülnek; a migrációkat a Lovable a rögzített commitból, ellenőrzőösszeggel futtatja.
 
@@ -14,6 +14,11 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 ## Foglaló: dataLayer-események (Lovable foglaló projekt, `b49a357`) – publikálásra vár
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
 - A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; a GTM-útmutató külön dokumentumként nincs a repóban.
+
+## [0022] Csendes hibák – `db/migrations/0022_silent_failures.sql`
+- Az `invoke_ingest` hívása a cron szerint „sikeres" volt akkor is, ha a betöltő 401/500-at adott. Új `http_alerts()`: a `net._http_response` nem 2xx válaszaira és időtúllépéseire kritikus riasztás (`http_failing`, küszöb: 2 hiba / 3 óra).
+- Új `ingestion_close_stuck()`: a 15 percnél régebbi „running" futást hibásra zárja (időtúllépés), 10 percenként ütemezve; a lezárt futás a meglévő „Betöltési hiba" riasztásban megjelenik.
+- Az önellenőrzés (`schema_selfcheck()`) kibővült a két új függvénnyel.
 
 ## [0021] Önellenőrzés és riasztás-hangolás – `db/migrations/0021_selfcheck_tuning.sql`
 - `schema_selfcheck()` és `schema_missing()`: kimutatja, ha egy migrációból hiányzik egy objektum (a korábbi 0018-as kimaradás mintájára).

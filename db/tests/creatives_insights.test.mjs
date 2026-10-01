@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -732,4 +732,31 @@ test("schema_selfcheck: minden elvárt objektum megvan, és a hiány kiderül", 
   await db.exec("drop view lead_google_campaign");
   const miss = (await db.query("select migration, object_name from schema_missing()")).rows;
   assert.deepEqual(miss, [{ migration: "0019", object_name: "lead_google_campaign" }]);
+});
+
+test("csendes hibák: megakadt futás lezárása és nem 2xx HTTP-válaszok riasztása", async () => {
+  const db = await setup();
+  const NOW = "2026-10-01T13:00:00Z";
+  // pg_net nélkül üres
+  assert.equal((await db.query("select * from http_alerts($1::timestamptz)", [NOW])).rows.length, 0);
+
+  // megakadt és friss futás
+  await db.query("insert into ingestion_run (job, started_at, status) values ('ac:contacts', $1::timestamptz - interval '40 minutes', 'running'), ('web:daily', $1::timestamptz - interval '3 minutes', 'running'), ('leads:sync', $1::timestamptz - interval '2 hours', 'ok')", [NOW]);
+  assert.equal((await db.query("select ingestion_close_stuck($1::timestamptz) as n", [NOW])).rows[0].n, 1);
+  const runs = (await db.query("select job, status, error from ingestion_run order by job")).rows;
+  assert.equal(runs.find((r) => r.job === "ac:contacts").status, "error");
+  assert.match(runs.find((r) => r.job === "ac:contacts").error, /időtúllépés/);
+  assert.equal(runs.find((r) => r.job === "web:daily").status, "running");
+  assert.equal((await db.query("select ingestion_close_stuck($1::timestamptz) as n", [NOW])).rows[0].n, 0); // idempotens
+  // a lezárt futás a meglévő betöltési hiba riasztásban megjelenik
+  assert.equal((await db.query("select * from data_quality_alerts($1::timestamptz) where insight_key='ingestion_error' and scope_id='ac:contacts'", [NOW])).rows.length, 1);
+
+  // HTTP-válaszok
+  await db.exec("create schema net; create table net._http_response(id bigint, status_code int, content text, timed_out boolean, error_msg text, created timestamptz)");
+  const ins = (code, mins, timedOut = false) => db.query("insert into net._http_response(status_code, content, timed_out, created) values ($1,'x',$2,$3::timestamptz - make_interval(mins => $4))", [code, timedOut, NOW, mins]);
+  await ins(200, 5); await ins(401, 10); await ins(401, 20); await ins(500, 30); await ins(401, 400); // 400 perces: ablakon kívül
+  const a = (await db.query("select scope_id, impact from http_alerts($1::timestamptz)", [NOW])).rows;
+  assert.deepEqual(a.map((r) => [r.scope_id, Number(r.impact)]), [["401", 2]]); // az 500 csak 1 db: küszöb alatt
+  assert.equal((await db.query("select * from data_quality_alerts($1::timestamptz) where insight_key='http_failing'", [NOW])).rows.length, 1);
+  assert.equal((await db.query("select count(*)::int n from schema_missing()")).rows[0].n, 0);
 });
