@@ -19,6 +19,9 @@ Az alábbi lista a jelenlegi állapotot írja le, funkciónként: mire való, ho
 ## SEO (Ahrefs)
 - Pillanatképek, CTR-görbe alapú lehetőségek (gyors nyeremény, fizetett–szerves átfedés, SEO-rés, kannibalizáció). Az Ahrefs a Windsoron át nem ad kulcsszó-ötleteket.
 
+## Organikus posztok (Instagram, Facebook)
+- Minden poszt (reel, kép, karusszel; Facebook-poszt) elérése, megtekintése, mentése, megosztása, interakció-aránya, reeleknél az átlagos nézési idő és a továbbgörgetési arány. A poszt részletében az elérés idősora a közzététel óta. Forrás: Windsor. A számok az Instagram saját késleltetésével frissülnek; nézők szerinti bontás poszt szintjén nincs.
+
 ## Mérés-ellenőrzés
 - **dataLayer-események:** a foglaló (iframe) eseményei (`booking_step_view`, `lead_created`, `callback_requested`, `appointment_booked`) a lassjol.hu GTM-jén át mennek ki, `lead_id` és személyes adat nélkül.
 - **Egyeztetés:** napi összevetés a saját adatbázis és a GA4 között. A GA4 hozzájárulás-függő, ezért alulmér; a saját adatbázis az igazság.

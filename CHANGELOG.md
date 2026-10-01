@@ -1,6 +1,6 @@
 # Változásnapló – Saint James Innovation Data Hub
 
-Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 29 sikeres teszt).
+Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 30 sikeres teszt).
 
 A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonalak) készülnek; a migrációkat a Lovable a rögzített commitból, ellenőrzőösszeggel futtatja.
 
@@ -14,6 +14,11 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 ## Foglaló: dataLayer-események (Lovable foglaló projekt, `b49a357`) – publikálásra vár
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
 - A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; a GTM-útmutató külön dokumentumként nincs a repóban.
+
+## [0025] Organikus posztok – `db/migrations/0025_organic_social.sql`
+- Bejegyzésenként napi pillanatkép az Instagram-posztok (reel, kép, karusszel) és a Facebook-posztok elérésről, megtekintésről, like-ról, kommentről, mentésről, megosztásról, átlagos nézési időről és a reel-továbbgörgetésről (`dim_social_post`, `fact_social_post_daily`, `mart_social_post`).
+- `social_summary()` (típusonként és a legjobb poszt), `social_post_trend()` (a poszt elérésének idősora a közzététel óta).
+- Forrás: Windsor `instagram` és `facebook_organic`. Fenntartás: a Windsorban jelenleg bekötött Facebook-oldal (Saint James Eye Clinic Budapest, ~200 követő) nem az aktív oldal; az aktív oldal posztjai csak a Windsorba kötés után jelennek meg.
 
 ## [0024] Foglalás-definíció – `db/migrations/0024_booking_definition.sql`
 - Az Áttekintés „Foglalás" száma 3 volt, mert csak a Dokirex-azonosítóval rendelkező leadet számolta, az azonosítót viszont a foglaló csak 2026-09-30 óta menti. A kiválasztott időpont (dátum, idő) korábban is rögzült: szept. 1. óta 44 lead rögzített időpontot, ebből 41-nek nincs azonosítója.

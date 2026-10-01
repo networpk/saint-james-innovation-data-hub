@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql", "0024_booking_definition.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql", "0024_booking_definition.sql", "0025_organic_social.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -837,4 +837,45 @@ test("foglalás-definíció: a rögzített időpont is foglalás, a visszahívá
   assert.equal(Number(f.h), 4);
   const s = (await db.query("select value from mart_signals_long where signal='booked_web' and date='2026-10-01'")).rows[0];
   assert.equal(Number(s.value), 2);
+});
+
+test("organikus posztok: pillanatképek, utolsó állapot, változás, összesítő és idősor", async () => {
+  const db = await setup();
+  const post = (id, plat, at, type, url) => db.query(
+    `insert into dim_social_post(platform, post_id, account_id, permalink, published_at, media_type, caption) values ($1,$2,'acc',$3,$4,$5,'szöveg')`, [plat, id, url, at, type]);
+  await post("p1", "instagram", "2026-09-28T17:06:00Z", "REELS", "https://instagram.com/reel/p1/");
+  await post("p2", "instagram", "2026-09-26T17:02:00Z", "IMAGE", "https://instagram.com/p/p2/");
+  await post("p3", "instagram", "2026-09-27T10:00:00Z", "REELS", "https://instagram.com/reel/p3/");
+  await post("f1", "facebook", "2026-09-26T17:01:00Z", "photo", "https://facebook.com/x/f1");
+  const snap = (d, plat, id, reach, views, likes, comments, saves, shares) => db.query(
+    `insert into fact_social_post_daily(snapshot_date, platform, post_id, reach, views, likes, comments, saves, shares, interactions, avg_watch_ms, skip_rate)
+     values ($1,$2,$3,$4::bigint,$5::bigint,$6::bigint,$7::bigint,$8::bigint,$9::bigint,$6::bigint+$7::bigint+$8::bigint+$9::bigint,15100,0.49)`, [d, plat, id, reach, views, likes, comments, saves, shares]);
+  await snap("2026-09-29", "instagram", "p1", 600, 800, 8, 1, 1, 0);
+  await snap("2026-09-30", "instagram", "p1", 1014, 1427, 10, 2, 3, 1);   // legfrissebb
+  await snap("2026-09-30", "instagram", "p2", 475, 886, 19, 1, 1, 0);
+  await snap("2026-09-30", "instagram", "p3", 3000, 4000, 40, 4, 6, 2);
+  await snap("2026-09-30", "facebook", "f1", 4773, 8250, 199, 3, 0, 0);
+
+  const m = Object.fromEntries((await db.query("select * from mart_social_post")).rows.map((r) => [r.post_id, r]));
+  assert.equal(Number(m.p1.reach), 1014);                       // a legfrissebb pillanatkép
+  assert.equal(Number(m.p1.reach_change_1d), 414);              // az előző napi képhez képest
+  assert.equal(Number(m.p1.age_days), 2);
+  assert.ok(Math.abs(Number(m.p1.interaction_rate) - 16 / 1014) < 1e-9);
+  assert.equal(m.p2.reach_change_1d, null);                     // nincs előző pillanatkép
+
+  const s = (await db.query("select * from social_summary('2026-09-01','2026-09-30','instagram') order by media_type")).rows;
+  const reels = s.find((r) => r.media_type === "REELS");
+  assert.equal(Number(reels.posts), 2);
+  assert.equal(Number(reels.total_reach), 4014);
+  assert.equal(reels.best_post_id, "p3");
+  assert.equal(Number(reels.median_reach), 2007);
+  assert.equal(s.length, 2);                                    // a Facebook nem keveredik bele
+
+  const t = (await db.query("select * from social_post_trend('instagram','p1')")).rows;
+  assert.deepEqual(t.map((r) => [Number(r.days_since_publish), Number(r.reach)]), [[1, 600], [2, 1014]]);
+
+  // törlés a poszttal együtt viszi a pillanatképeket
+  await db.query("delete from dim_social_post where post_id = 'f1'");
+  assert.equal((await db.query("select count(*)::int n from fact_social_post_daily where post_id='f1'")).rows[0].n, 0);
+  assert.equal((await db.query("select count(*)::int n from schema_missing()")).rows[0].n, 0);
 });
