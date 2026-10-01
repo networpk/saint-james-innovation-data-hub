@@ -20,7 +20,7 @@ async function setup() {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql"]) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql"]) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -451,5 +451,84 @@ test("lead-életút: alkalmassági és foglalási leadek szétválasztva, félbe
 
   await db.exec("set role anon");
   await assert.rejects(db.query("select * from lead_journey"));
+  await db.exec("reset role");
+});
+
+test("ActiveCampaign: lead-összekötés hash alapján, automatizmus-előrehaladás, kampány-arányok és AC-riasztások", async () => {
+  const db = await setup();
+  const NOW = "2026-09-30T12:00:00Z";
+  const U = (n) => `00000000-0000-0000-0000-0000000001${String(n).padStart(2, "0")}`;
+  const lead = (n, at, hash, src = "booking", stage = "completed") => db.query(
+    `insert into fact_lead(lead_id,created_at,updated_at,source,booking_stage,email_hash,booking_progress) values ($1,$2,$2,$3,$4,$5,'{"lastStep":"done","totalSeconds":100}')`, [U(n), at, src, stage, hash]);
+  await lead(1, "2026-09-20T10:00:00Z", "h1");
+  await lead(2, "2026-09-21T10:00:00Z", "h2");
+  await lead(3, "2026-09-22T10:00:00Z", "h3");
+  for (let i = 4; i <= 6; i++) await lead(i, `2026-09-2${i}T10:00:00Z`, `hx${i}`); // AC-ben nincs
+  await db.query(`insert into dim_ac_automation(automation_id,name) values (105,'Online időpontfoglalás')`);
+  await db.query(`insert into fact_ac_contact(ac_contact_id,email_hash,created_at,tags,channel,sent_count,bounced_hard) values
+    (1,'h1','2026-09-20T10:05:00Z','{foglalt}','Facebook',3,false),
+    (2,'h2','2026-09-21T10:30:00Z','{}','Google',1,false),
+    (3,'h3','2026-09-22T11:00:00Z','{}','Google',1,true)`);
+  await db.query(`insert into fact_ac_contact_automation(id,ac_contact_id,automation_id,raw_status,added_at,removed_at,completed_elements,total_elements,completed) values
+    (1,1,105,'2','2026-09-20T10:06:00Z','2026-09-25T10:00:00Z',5,5,true),
+    (2,2,105,'1','2026-09-21T10:31:00Z',null,2,5,false),
+    (3,3,105,'1','2026-09-22T11:01:00Z','2026-09-23T00:00:00Z',1,5,false)`);
+  // elakadt tagságok: 5 régi aktív névjegy egy másik automatizmusban
+  await db.query(`insert into dim_ac_automation(automation_id,name) values (200,'Emlékeztető')`);
+  for (let i = 0; i < 5; i++) await db.query(`insert into fact_ac_contact_automation(id,ac_contact_id,automation_id,raw_status,added_at,completed_elements,total_elements,completed) values ($1,$2,200,'1','2026-08-01T10:00:00Z',1,4,false)`, [100 + i, 900 + i]);
+  await db.query(`insert into fact_ac_campaign_snapshot(snapshot_date,campaign_id,name,sent_at,status,send_amt,unique_opens,verified_unique_opens,unique_link_clicks,unsubscribes,hard_bounces)
+    values ('2026-09-29',1,'Régi','2026-09-10T10:00:00Z','5',1000,400,300,40,5,2), ('2026-09-30',1,'Régi','2026-09-10T10:00:00Z','5',1000,500,350,50,6,30)`);
+
+  const la = Object.fromEntries((await db.query("select * from lead_ac")).rows.map((r) => [r.lead_id, r]));
+  assert.equal(la[U(1)].automation_state, "befejezte");
+  assert.equal(la[U(2)].automation_state, "aktiv");
+  assert.equal(la[U(3)].automation_state, "kilepett");
+  assert.equal(la[U(4)].automation_state, "nincs");
+  assert.equal(la[U(4)].ac_contact_id, null);
+  assert.equal(Number(la[U(2)].automation_progress), 0.4);
+  assert.ok(Math.abs(Number(la[U(1)].hours_lead_to_ac) - 5 / 60) < 1e-6);
+  assert.equal(la[U(3)].ac_bounced_hard, true);
+  assert.equal(la[U(1)].automation_name, "Online időpontfoglalás");
+
+  const s = (await db.query("select * from lead_ac_summary('2026-09-01','2026-09-30',null)")).rows[0];
+  assert.equal(Number(s.leads), 6);
+  assert.equal(Number(s.in_ac), 3);
+  assert.equal(Number(s.not_in_ac), 3);
+  assert.equal(Number(s.finished), 1);
+  assert.equal(Number(s.active), 1);
+  assert.equal(Number(s.exited), 1);
+  assert.equal(Number(s.bounced), 1);
+  assert.equal((await db.query("select count(*) n from lead_journey_ac")).rows[0].n, 6);
+
+  const prog = (await db.query("select * from mart_ac_automation_progress where automation_id=105 order by completed_elements")).rows;
+  assert.deepEqual(prog.map((r) => Number(r.completed_elements)), [1, 2, 5]);
+  assert.equal(Number(prog[2].finished), 1);
+
+  const camp = (await db.query("select * from mart_ac_campaign_performance")).rows;
+  assert.equal(camp.length, 1, "csak a legfrissebb pillanatkép");
+  assert.equal(Number(camp[0].unique_opens), 500);
+  assert.ok(Math.abs(Number(camp[0].open_rate) - 0.5) < 1e-9);
+  assert.ok(Math.abs(Number(camp[0].verified_open_rate) - 0.35) < 1e-9);
+  assert.ok(Math.abs(Number(camp[0].click_to_open_rate) - 0.1) < 1e-9);
+
+  const al = (await db.query("select insight_key, scope_label, severity from data_quality_alerts($1::timestamptz)", [NOW])).rows;
+  const keys = al.map((r) => r.insight_key);
+  assert.ok(keys.includes("ac_sync_gap"), `hiányzik ac_sync_gap: ${keys}`);
+  assert.ok(keys.includes("ac_stuck_contacts"));
+  assert.ok(keys.includes("ac_bounce_rate"));
+  assert.ok(!al.some((r) => r.insight_key === "ac_stuck_contacts" && r.scope_label === "Online időpontfoglalás"));
+  // a meglévő adatminőségi riasztások továbbra is működnek, és a refresh felveszi az AC-szabályokat
+  const r = (await db.query("select * from refresh_alerts($1::date, 14, $2::timestamptz)", [ASOF, NOW])).rows[0];
+  assert.ok(Number(r.created) >= 3);
+  assert.ok((await db.query("select 1 from alert where insight_key='ac_sync_gap'")).rows.length === 1);
+
+  // AC-adat nélkül nincs téves szinkron-riasztás
+  const db2 = await setup();
+  await db2.query(`insert into fact_lead(lead_id,created_at,updated_at,source,email_hash) select gen_random_uuid(), '2026-09-25T10:00:00Z','2026-09-25T10:00:00Z','booking','x'||g from generate_series(1,6) g`);
+  assert.ok(!(await db2.query("select 1 from data_quality_alerts($1::timestamptz) where insight_key='ac_sync_gap'", [NOW])).rows.length);
+
+  await db.exec("set role anon");
+  await assert.rejects(db.query("select * from lead_ac"));
+  await assert.rejects(db.query("select * from fact_ac_contact"));
   await db.exec("reset role");
 });
