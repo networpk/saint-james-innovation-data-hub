@@ -20,7 +20,7 @@ async function setup(skip = []) {
   await db.exec(sql("0004_analytics_v2.sql"));
   await db.exec(sql("0005_creatives_insights.sql"));
   await db.exec(sql("0007_fix_click_gap.sql"));
-  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql", "0024_booking_definition.sql", "0025_organic_social.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
+  for (const f of ["0008_source_conversion.sql", "0009_campaign_join_ids.sql", "0010_search_and_events.sql", "0011_keyword_verdict.sql", "0012_seo.sql", "0013_alerts.sql", "0014_lead_journey.sql", "0015_activecampaign.sql", "0016_performance.sql", "0017_ac_emails_flow.sql", "0018_datalayer_events.sql", "0019_google_campaign_id.sql", "0020_cron_alerts.sql", "0021_selfcheck_tuning.sql", "0022_silent_failures.sql", "0023_lead_outcomes.sql", "0024_booking_definition.sql", "0025_organic_social.sql", "0026_quiz_lead_alert.sql"]) if (!skip.includes(f)) await db.exec(sql(f));
   return db;
 }
 const cls = (db, p, a, id, name, bl = "szemeszet") =>
@@ -878,4 +878,28 @@ test("organikus posztok: pillanatképek, utolsó állapot, változás, összesí
   await db.query("delete from dim_social_post where post_id = 'f1'");
   assert.equal((await db.query("select count(*)::int n from fact_social_post_daily where post_id='f1'")).rows[0].n, 0);
   assert.equal((await db.query("select count(*)::int n from schema_missing()")).rows[0].n, 0);
+});
+
+test("alkalmassági lead kiesés: sok befejezett kérdőív, de nincs mentett lead -> riasztás", async () => {
+  const db = await setup();
+  const NOW = "2026-10-02T12:00:00Z";
+  const sess = (n, completed, at) => db.query(
+    `insert into fact_quiz_session(session_id, payload) values (gen_random_uuid(), $1)`,
+    [JSON.stringify({ completed, started_at: at, completed_at: completed ? at : null, furthest_step: completed ? "resultLens" : "age" })]);
+  for (let i = 0; i < 6; i++) await sess(i, true, "2026-10-01T10:00:00Z");
+  await sess(9, false, "2026-10-01T11:00:00Z");              // nem befejezett: nem számít
+  await sess(10, true, "2026-09-20T10:00:00Z");              // ablakon kívül
+  assert.equal((await db.query("select * from quiz_alerts($1::timestamptz)", [NOW])).rows.length, 1);
+  const al = (await db.query("select * from data_quality_alerts($1::timestamptz) where insight_key='quiz_lead_gap'", [NOW])).rows;
+  assert.equal(al.length, 1);
+  assert.equal(al[0].severity, "critical");
+  assert.equal(Number(al[0].impact), 6);
+
+  // ha a leadek mentődnek, nincs riasztás
+  for (let i = 0; i < 5; i++) await db.query(`insert into fact_lead(lead_id,created_at,updated_at,source,result_type) values (gen_random_uuid(),'2026-10-01T10:30:00Z','2026-10-01T10:30:00Z','quiz','resultLens')`);
+  assert.equal((await db.query("select * from quiz_alerts($1::timestamptz)", [NOW])).rows.length, 0);
+  // kevés session: nincs riasztás
+  const db2 = await setup();
+  for (let i = 0; i < 3; i++) await db2.query(`insert into fact_quiz_session(session_id,payload) values (gen_random_uuid(),'{"completed":true,"completed_at":"2026-10-01T10:00:00Z"}')`);
+  assert.equal((await db2.query("select * from quiz_alerts($1::timestamptz)", [NOW])).rows.length, 0);
 });

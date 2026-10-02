@@ -1,6 +1,6 @@
 # Változásnapló – Saint James Innovation Data Hub
 
-Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 30 sikeres teszt).
+Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (PART) sorrendjéből. Minden dátum 2026. szeptember 30. – október 1. Az adatbázis-migrációk a `db/migrations/` mappában vannak, a tesztek a `db/tests/` mappában (jelenleg 31 sikeres teszt).
 
 A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonalak) készülnek; a migrációkat a Lovable a rögzített commitból, ellenőrzőösszeggel futtatja.
 
@@ -14,6 +14,11 @@ A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonal
 ## Foglaló: dataLayer-események (Lovable foglaló projekt, `b49a357`) – publikálásra vár
 - Új `bookingTracking.ts`: csak az időpontfoglaló flow küld eseményt (`lead_created`, `appointment_booked`, `callback_requested`, lépés-események), `lead_id` és személyes adat nélkül, csak a `lassjol.hu` és `www.lassjol.hu` felé; a `booking-lead` válasza `created` jelzőt kapott. A kérdőív nem küld eseményt.
 - A szülőoldali GTM-listener: `integrations/lassjol-parent/gtm-booking-events-listener.html`; a GTM-útmutató külön dokumentumként nincs a repóban.
+
+## [0026] Alkalmassági lead kiesés riasztás – `db/migrations/0026_quiz_lead_alert.sql`
+- Az alkalmassági kérdőív leadmentése 2026-09-22 óta csendben nem működött: a mentő kód `insert ... returning` hívása az anonim szerepnek RLS-hibával elbukott, a hibát a felület elnyelte, a látogató mégis látta az eredményoldalt. 09-29 óta 12 befejezett kérdőív-session (a korábbi napokra nincs session-követés) nem hozott mentett leadet.
+- Új riasztás (`quiz_lead_gap`, kritikus): ha az elmúlt 3 napban legalább 5 kérdőív ért az eredményig, és a mentett alkalmassági leadek aránya 30% alatt van.
+- A javítás a foglaló projektben készül (kliensoldali azonosító-generálás, `.select()` nélküli mentés, újrapróbálkozás), publikálásra vár.
 
 ## [0025] Organikus posztok – `db/migrations/0025_organic_social.sql`
 - Bejegyzésenként napi pillanatkép az Instagram-posztok (reel, kép, karusszel) és a Facebook-posztok elérésről, megtekintésről, like-ról, kommentről, mentésről, megosztásról, átlagos nézési időről és a reel-továbbgörgetésről (`dim_social_post`, `fact_social_post_daily`, `mart_social_post`).
