@@ -6,7 +6,7 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx ingestion/src/migrate.ts",
     "ingest": "tsx ingestion/src/cli.ts",
-    "test": "tsx --test ingestion/src/**/*.test.ts && node --test db/tests/analytics_v2.test.mjs db/tests/creatives_insights.test.mjs db/tests/roles.test.mjs db/tests/pinned_reports.test.mjs db/tests/rls_tighten.test.mjs db/tests/assistant_folders.test.mjs"
+    "test": "tsx --test ingestion/src/**/*.test.ts && node --test db/tests/analytics_v2.test.mjs db/tests/creatives_insights.test.mjs db/tests/roles.test.mjs db/tests/pinned_reports.test.mjs db/tests/rls_tighten.test.mjs db/tests/assistant_folders.test.mjs db/tests/booking_lead_crm.test.mjs"
   },
   "dependencies": {
     "pg": "^8.13.0"
