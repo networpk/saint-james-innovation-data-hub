@@ -72,3 +72,21 @@ test("a személyes sorrend csak a sajátja, és a jelentés törlésekor a sorre
   await db.query("delete from pinned_report where id=$1", [rid]);
   assert.equal((await db.query("select count(*)::int n from pinned_report_order")).rows[0].n, 0);
 });
+
+test("0031: táblázat-pillanatkép: a kind és a kötelező tartalom ellenőrizve, a meglévő jelentések élők maradnak, újrafuttatható", async () => {
+  const { db, id } = await setup();
+  const a = await id("admin@x.hu");
+  await db.query("insert into pinned_report(owner_id, title, tool) values ($1,'Régi','get_campaigns')", [a]);
+  await db.exec(sql("0031_pinned_table_snapshot.sql"));
+  await db.exec(sql("0031_pinned_table_snapshot.sql"));
+  assert.equal((await db.query("select kind from pinned_report")).rows[0].kind, "live");
+  await db.query(`insert into pinned_report(owner_id, title, kind, snapshot) values ($1,'Tábla','table','{"columns":["a"],"rows":[["1"]]}')`, [a]);
+  await assert.rejects(db.query("insert into pinned_report(owner_id, title, kind) values ($1,'Üres tábla','table')", [a]), /kind_payload_check/);
+  await assert.rejects(db.query("insert into pinned_report(owner_id, title, kind) values ($1,'Élő eszköz nélkül','live')", [a]), /kind_payload_check/);
+  await assert.rejects(db.query("insert into pinned_report(owner_id, title, kind, tool) values ($1,'Hibás','mas','x')", [a]), /kind_check/);
+  // a megosztott táblázat lead-szintű jelzése az RLS-ben is érvényes (megtekintő nem látja)
+  const m = await id("megtekinto@x.hu");
+  await db.query(`insert into pinned_report(owner_id, scope, title, kind, snapshot, lead_level) values ($1,'shared','Lead tábla','table','{"rows":[]}', true), ($1,'shared','Nyílt tábla','table','{"rows":[]}', false)`, [a]);
+  const seen = (await as(db, m, () => db.query("select title from pinned_report order by title"))).rows.map((r) => r.title);
+  assert.deepEqual(seen, ["Nyílt tábla"]);
+});
