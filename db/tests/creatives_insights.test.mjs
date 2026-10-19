@@ -296,13 +296,13 @@ test("SEO: gyors nyeremény, fizetett–szerves átfedés, SEO-rés, kannibaliz�
   await cls(db, "google", "g2", "gc9", "GSN - Plasztikai_kezelések_kiemelt /konvértmax", "eszteika_plasztika");
   await cls(db, "google", "g1", "gc1", "GSN - Lézeres szemműtét /konvmax", "szemeszet");
   for (let i = 0; i < 20; i++) {
-    const d = day(i);
+    const d = new Date(Date.now() - (i + 1) * 86_400_000).toISOString().slice(0, 10); // a SEO-nézet a "mai naptól 30 nap" ablakot nézi, ezért az adat is mai-relatív
     await db.query(`insert into fact_keyword_daily(date,account_id,campaign_id,ad_group_id,keyword_text,match_type,impressions,clicks,spend,conversions) values
       ($1,'g2','gc9','a','dr bulyovszky istván','',25,6,2800,0.3), ($1,'g1','gc1','a','lézeres szemműtét','',200,50,9000,0),
       ($1,'g1','gc1','a','saint james','',100,30,2000,1), ($1,'g1','gc1','a','lencse műtét ára','',40,8,1500,0.5)`, [d]);
   }
-  // Ahrefs-pillanatkép
-  const snap = "2026-09-29";
+  // Ahrefs-pillanatkép (mai-relatív: a SEO-nézetek a friss pillanatképet keresik)
+  const snap = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
   await db.query(`insert into fact_seo_keyword_snapshot(snapshot_date,account_id,keyword,keyword_country,best_position,best_position_url,search_volume,keyword_traffic,cpc_usd,is_commercial,is_local,serp_target_positions_count) values
     ($1,'324','dr bulyovszky istván','hu',6,'https://saintjameshungary.hu/arcfelvarras/',40,2,0.15,true,true,1),
     ($1,'323','lézeres szemműtét','hu',5,'https://lassjol.hu/arak/',2300,140,1.2,true,false,1),
@@ -317,7 +317,7 @@ test("SEO: gyors nyeremény, fizetett–szerves átfedés, SEO-rés, kannibaliz�
   assert.ok(by("cannibalization", "lencse műtét ára"), "két saját oldal ugyanarra");
   assert.ok(!by("quick_win", "saint james"), "az 1. hely nem gyors nyeremény");
   // a név teljes képe: MINDEN üzletágban, nem csak a szemészetben
-  const lk = (await db.query("select kind, business_line, label from entity_lookup('Bulyovszky István', $1::date, $2::date, 10)", [day(0), day(19)])).rows;
+  const lk = (await db.query("select kind, business_line, label from entity_lookup('Bulyovszky István', $1::date, $2::date, 10)", [new Date(Date.now() - 25 * 86_400_000).toISOString().slice(0, 10), new Date().toISOString().slice(0, 10)])).rows;
   const kinds = lk.map((r) => r.kind + ":" + r.business_line);
   assert.ok(kinds.includes("paid_keyword:eszteika_plasztika"), kinds.join("|"));
   assert.ok(kinds.includes("organic_keyword:eszteika_plasztika"), kinds.join("|"));
