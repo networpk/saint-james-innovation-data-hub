@@ -91,6 +91,7 @@ const CAMPAIGNS = [
   ["tiktok", T, "Lassjol - CV - REM - Leads", "szemeszet", "General", "Konverzió"], // 0034 előtt: nincs kategória
   ["tiktok", T, "Lassjol - CV - Seany - Conversion", "szemeszet", "General", "Konverzió"], // 0034 előtt: nincs kategória
   ["tiktok", T, "Olvasószemüveg", "szemeszet", "General", "Olvasószemüveg"], // 0034 előtt: nincs üzletág sem
+  ["tiktok", T, "STJ_Follower-gyűjtő", BL, E, "Follower-gyűjtő"], // 0034 előtt: nincs üzletág sem (0 Ft-os, egynapos kampány)
 ];
 
 async function setup({ apply = true } = {}) {
@@ -204,7 +205,7 @@ test("alias-tábla jogosultság: tag olvashat, nem írhat; elemző írhat; anon 
   await db.exec("reset role");
 });
 
-test("besorolás: mind a 44 éles kampány felismert üzletággal, kategóriával és alkategóriával (a 0034 előtt négy hiányos volt)", async () => {
+test("besorolás: mind a 45 éles kampány felismert üzletággal, kategóriával és alkategóriával (a 0034 előtt öt hiányos volt)", async () => {
   const classify = async (db, p, a, name) => (await db.query(`
     with m as (select * from campaign_mapping_rule r where r.active and (r.platform is null or r.platform = $1)
       and (r.account_id is null or r.account_id = $2) and (r.name_pattern is null or sj_norm($3) like sj_norm(r.name_pattern))),
@@ -217,9 +218,9 @@ test("besorolás: mind a 44 éles kampány felismert üzletággal, kategóriáva
     const r = await classify(before.db, p, a, name);
     if (r.bl !== bl || r.cat !== cat || r.sub !== sub) missing.push(name);
   }
-  assert.deepEqual(missing.sort(), ["Lassjol - CV - REM - Leads", "Lassjol - CV - Seany - Conversion", "Olvasószemüveg", "SAINTJAMESHUNGARY - CONVERSION"].sort());
+  assert.deepEqual(missing.sort(), ["Lassjol - CV - REM - Leads", "Lassjol - CV - Seany - Conversion", "Olvasószemüveg", "SAINTJAMESHUNGARY - CONVERSION", "STJ_Follower-gyűjtő"].sort());
   const { db } = await setup();
-  assert.equal(CAMPAIGNS.length, 44);
+  assert.equal(CAMPAIGNS.length, 45);
   for (const [p, a, name, bl, cat, sub] of CAMPAIGNS)
     assert.deepEqual(await classify(db, p, a, name), { bl, cat, sub }, name);
 });
@@ -228,7 +229,7 @@ test("a migráció újrafuttatható: a szabályok, az aliasok és a nézetek nem
   const { db } = await setup();
   const count = async () => (await db.query("select (select count(*) from campaign_mapping_rule)::int r, (select count(*) from campaign_utm_alias)::int a")).rows[0];
   const first = await count();
-  assert.equal(first.r, LIVE_RULES.length + 6);
+  assert.equal(first.r, LIVE_RULES.length + 8);
   await db.exec(sql("0034_campaign_name_match.sql"));
   assert.deepEqual(await count(), first);
 });

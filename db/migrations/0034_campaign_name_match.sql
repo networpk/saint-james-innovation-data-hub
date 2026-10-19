@@ -144,6 +144,8 @@ from (values
   (45, null,     '%Conversion%',      'szemeszet', null,       'General',  'Konverzió', '0034: szemészet / Konverzió (CONVERSION)'),
   (46, null,     '% CV %',            'szemeszet', null,       'General',  'Konverzió', '0034: szemészet / Konverzió (CV)'),
   (61, null,     '%Conversion%',      'eszteika_plasztika', null, 'Esztétika / plasztika', 'Konverzió', '0034: esztétika / Konverzió (CONVERSION)'),
-  (62, null,     '% CV %',            'eszteika_plasztika', null, 'Esztétika / plasztika', 'Konverzió', '0034: esztétika / Konverzió (CV)')
+  (62, null,     '% CV %',            'eszteika_plasztika', null, 'Esztétika / plasztika', 'Konverzió', '0034: esztétika / Konverzió (CV)'),
+  (16, 'tiktok', 'STJ%Follower%',    null::text, 'eszteika_plasztika', null::text, null::text, '0034: STJ_Follower-gyűjtő (TikTok) → esztétika'),
+  (63, null,     '%Follower%',        'eszteika_plasztika', null, 'Esztétika / plasztika', 'Follower-gyűjtő', '0034: esztétika / Follower-gyűjtő')
 ) as v(priority, platform, name_pattern, only_bl, business_line, category, subcategory, note)
 where not exists (select 1 from public.campaign_mapping_rule r where r.note = v.note);
