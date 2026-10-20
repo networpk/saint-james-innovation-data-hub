@@ -42,7 +42,11 @@ Addig nem hívunk Dokirex végpontot, nem írunk bele, és a Hub nem kap Dokirex
 
 ## Időpont módosítása a hívásnaplóból (2026-10-20, a recepció kérésére)
 
-Ma a rendszer a Dokirex-ből csak olvas (kezelések, szabad időpontok, számlázási eljárás) és új előjegyzést ír (`insertOnlineElojegyzes`). Módosító, áthelyező vagy lemondó hívás nincs a kódban, és a nyilvános leírásban sem találtunk biztosat (a leírás kb. 125 végpontot sorol, foglalás-állapotot visszaolvasót nem). Amíg a Dokirex nem erősíti meg, az áthelyezést nem tekintjük elérhetőnek, és élő végpontot nem próbálunk ki. Addig a hívásnaplóban kézi „átfoglalás-kérés" működik (a Dokirexben a recepció vezeti át).
+Ma a rendszer a Dokirex-ből olvas (kezelések, szabad időpontok, számlázási eljárás) és új előjegyzést ír (`insertOnlineElojegyzes`).
+
+**Javítás (2026-10-20):** a nyilvános API-leírásban (`api-docs-json`) van `updateElojegyzes`, `deleteElojegyzes`, `updateElojegyzesStatus`, `listPaciensElojegyzes` és `listElojegyzesWithDetails` is, tehát az áthelyezés és a törlés támogatott. Korábbi állításunk, hogy módosító vagy törlő végpont nincs, téves volt. A foglaló admin felületén megépült a `reschedule` művelet (`updateElojegyzes`: `ElojegyzesID`, `RendelesiNapID`, `Idopont`, `Megjegyzes`), admin és munkatárs használhatja, próbamóddal (dryRun) és szabad-időpont ellenőrzéssel. Az élő próba egy kitalált tesztpácienssel (elojegyzesId 47026) sikerült: áthelyezés másik napra, a régi időpont felszabadult, törlés után az új időpont is szabad. Nem láttuk még: valódi lead kártyáján a naplózást, és hogy a Dokirex küld-e értesítést a páciensnek áthelyezéskor.
+
+A Dokirexnek a végpontok létezéséről már nem kell kérdezni; a lenti 3–9. kérdés (azonosító, jogosultság, értesítés, tesztkörnyezet, korlátok) továbbra is érvényes, az 1–2. kérdés helyett elég a megerősítés, hogy a `updateElojegyzes` / `deleteElojegyzes` a támogatott, tartós módja az áthelyezésnek és lemondásnak.
 
 > Tárgy: Online előjegyzés módosítása az API-n keresztül
 >
@@ -62,4 +66,4 @@ Ma a rendszer a Dokirex-ből csak olvas (kezelések, szabad időpontok, számlá
 >
 > Köszönjük!
 
-Mit építünk a válasz szerint: ha van valódi áthelyező végpont, szerveroldali `reschedule` művelet (admin, kötelező próbamód, zárolás); ha csak lemondás van, akkor „új foglalás, majd a régi törlése" külön, jelölt feladattal; ha semmi, marad a kézi átfoglalás-kérés.
+Állapot: a szerveroldali `reschedule` művelet él és tesztelt; a hívásnapló kártyáján a kézi „átfoglalás-kérés" (piros jelölés, kézi átvezetés) elkészült, de nincs publikálva. A gomb bekötése a `reschedule` műveletre (új szabad időpont választása, próbamód, véglegesítés) és az első valódi áthelyezés a felhasználó jóváhagyására vár. Valódi páciens foglalását csak a recepció egyeztetése után mozgatjuk.
