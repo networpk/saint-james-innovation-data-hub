@@ -9,7 +9,7 @@ const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 
 const G_E = "556-030-7472", G_S = "149-137-6230", M = "2060753947612996", CONV = "120249145359870714";
 
-async function setup() {
+async function setup({ withFix = true } = {}) {
   const db = new PGlite();
   await db.exec(`create role anon nologin; create role authenticated nologin; create role service_role nologin;
     grant usage on schema public to anon, authenticated, service_role;
@@ -26,6 +26,7 @@ async function setup() {
   await db.query("delete from user_roles");
   await db.query("insert into user_roles(user_id, role) values ($1,'elemzo'), ($2,'megtekinto')", [elemzo, tag]);
   await db.exec(sql("0035_conversion_roles.sql"));
+  if (withFix) await db.exec(sql("0038_apply_roles_rounding.sql"));
   return { db, elemzo, tag };
 }
 async function as(db, role, uid, fn) {
@@ -132,4 +133,19 @@ test("a migráció újrafuttatható: a kezdeti szerepek nem duplázódnak", asyn
   assert.equal(first, 9);
   await db.exec(sql("0035_conversion_roles.sql"));
   assert.equal(await count(), first);
+});
+
+test("tört konverzió (0038): a 0035 minden futásnál újraírja a tört sorokat, a javítás után a második futás nem ír semmit", async () => {
+  const run = async (db) => Number((await db.query("select apply_conversion_roles('2026-10-01','2026-10-31') n")).rows[0].n);
+  for (const withFix of [false, true]) {
+    const { db } = await setup({ withFix });
+    await perf(db, "2026-10-14", "google", G_E, "c1", 3.05, "ag1");
+    await act(db, "2026-10-14", "google", G_E, "c1", "Sikeres időpontfoglalás", 3.0549, 3.0549, "ag1");
+    await act(db, "2026-10-14", "google", G_E, "c1", "Időpontfoglalás kattintás", 10.5, 10.5, "ag1");
+    assert.equal(await run(db), 1); // az első futás beírja a soft számot
+    const r = await lead(db, "2026-10-14", "google", "c1", "ag1");
+    assert.equal(Number(r.platform_leads), 3.05); // 2 tizedesre kerekítve
+    assert.equal(Number(r.extra.soft_conversions), 10.5);
+    assert.equal(await run(db), withFix ? 0 : 1); // javítás nélkül a tört érték újra „eltérő"
+  }
 });
