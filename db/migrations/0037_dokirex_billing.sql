@@ -20,10 +20,10 @@ create table if not exists public.fact_dokirex_billing (
 );
 create index if not exists idx_fdb_visit on public.fact_dokirex_billing (visit_date);
 
-alter table public.fact_dokirex_billing enable row level security;
 revoke all on public.fact_dokirex_billing from anon;
 grant select on public.fact_dokirex_billing to authenticated;
 grant all on public.fact_dokirex_billing to service_role;
+alter table public.fact_dokirex_billing enable row level security;
 
 -- Előjegyzés-szintű adat: ugyanaz a szabály, mint a fact_booking-nál (admin és elemző). A megtekintő az összesítő függvényt használja.
 drop policy if exists lead_read on public.fact_dokirex_billing;
@@ -37,10 +37,10 @@ create table if not exists public.dokirex_service_map (
   note text,
   updated_at timestamptz not null default now()
 );
-alter table public.dokirex_service_map enable row level security;
 revoke all on public.dokirex_service_map from anon;
 grant select, insert, update, delete on public.dokirex_service_map to authenticated;
 grant all on public.dokirex_service_map to service_role;
+alter table public.dokirex_service_map enable row level security;
 
 drop policy if exists dsm_member_read on public.dokirex_service_map;
 create policy dsm_member_read on public.dokirex_service_map for select to authenticated
