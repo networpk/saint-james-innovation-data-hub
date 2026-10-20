@@ -37,3 +37,29 @@
 | Semmi új | A Hub csak az általunk küldött foglalásokat követi (`booked` állapot); megjelent/lemondott és bevétel nem lesz. A sikeres foglalás a mérőszám (GA4 `sikeres_foglalas`). |
 
 Addig nem hívunk Dokirex végpontot, nem írunk bele, és a Hub nem kap Dokirex jelszót.
+
+(Frissítés, 2026-10-20: a `builtin_getElojegyzesSzamlazas` eljárást a Dokirex elkészítette és javította; az első működő minta és a belőle adódó nyitott kérdések a `docs/dokirex-szamlazas-minta.md` fájlban vannak. A hívást csak a felhasználó jóváhagyásával, csak olvasásra használjuk.)
+
+## Időpont módosítása a hívásnaplóból (2026-10-20, a recepció kérésére)
+
+Ma a rendszer a Dokirex-ből csak olvas (kezelések, szabad időpontok, számlázási eljárás) és új előjegyzést ír (`insertOnlineElojegyzes`). Módosító, áthelyező vagy lemondó hívás nincs a kódban, és a nyilvános leírásban sem találtunk biztosat (a leírás kb. 125 végpontot sorol, foglalás-állapotot visszaolvasót nem). Amíg a Dokirex nem erősíti meg, az áthelyezést nem tekintjük elérhetőnek, és élő végpontot nem próbálunk ki. Addig a hívásnaplóban kézi „átfoglalás-kérés" működik (a Dokirexben a recepció vezeti át).
+
+> Tárgy: Online előjegyzés módosítása az API-n keresztül
+>
+> Kedves Roberta!
+>
+> A recepció a saját felületünkről szeretné módosítani a már rögzített online előjegyzéseket. A nyilvános API-leírásból ezt nem tudtuk egyértelműen megállapítani, ezért az alábbiakban kérjük a segítségüket:
+>
+> 1. Van-e az API-ban végpont egy meglévő online előjegyzés áthelyezésére (új dátum/időpont, más rendelési nap)? Mi a pontos neve, metódusa és paraméterei?
+> 2. Ha nincs: van-e előjegyzést lemondó vagy törlő végpont? Pontosan mi történik ilyenkor a foglalással (törlődik, vagy lemondott állapotba kerül)?
+> 3. Melyik azonosítóval hivatkozzunk az előjegyzésre: `ElojegyzesID`, `LastID` vagy `PaciensID`? Az `insertOnlineElojegyzes` válaszában melyik a tartós előjegyzés-azonosító?
+> 4. Kell-e a művelethez a rendelési nap (`RendelesiNapID`), a beavatkozás (`BeavatkozasID`) vagy az orvos/felhasználó azonosítója? Át lehet-e helyezni másik orvoshoz vagy másik beavatkozásra?
+> 5. Jogosult-e erre a jelenlegi API-kulcsunk, vagy külön jogosultság/Dokirex-felhasználó kell? Naplózza-e a Dokirex, ki módosított?
+> 6. Van-e végpont egy előjegyzés aktuális állapotának lekérdezésére (él-e még, mikorra szól)?
+> 7. Áthelyezéskor a régi időpont azonnal felszabadul-e? Atomi-e a művelet (vagy minden lefut, vagy semmi)?
+> 8. Kap-e a páciens automatikus e-mailt vagy SMS-t módosításkor vagy lemondáskor, és ez kikapcsolható-e?
+> 9. Van-e tesztkörnyezet vagy tesztnaptár, és van-e korlát a hívások számára?
+>
+> Köszönjük!
+
+Mit építünk a válasz szerint: ha van valódi áthelyező végpont, szerveroldali `reschedule` művelet (admin, kötelező próbamód, zárolás); ha csak lemondás van, akkor „új foglalás, majd a régi törlése" külön, jelölt feladattal; ha semmi, marad a kézi átfoglalás-kérés.
