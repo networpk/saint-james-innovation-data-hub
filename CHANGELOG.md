@@ -5,7 +5,8 @@ Visszamenőleg összeállítva a git előzményekből és a Lovable-feladatok (P
 A „Lovable" jelölésű pontok a Hub projektben (UI és szerveroldali útvonalak) készülnek; a migrációkat a Lovable a rögzített commitból, ellenőrzőösszeggel futtatja.
 
 ## [Várakozik / folyamatban]
-- **Lead-epizódok (0040, jóváhagyásra vár az alkalmazás):** ugyanaz a személy ugyanazon üzletágban az epizód első rekordjától számított 24 órán belül egy lead (`lead_episode` nézet, `lead_channel_episode_summary`, `lead_episode_totals`); a nyers `lead_channel`/`lead_channel_summary` változatlan. A Kampányok Grand total „Hub lead” ma nyers rekordokat számol (600 rekord, 480 személy, 516 epizód a vizsgált 60 napban). Az Elementor és a kézi import benne marad.
+- **Lead-epizódok forrástípus szerinti bontása (0041):** a Kampányok Mindösszesen időpontfoglaló / weboldal (Elementor) / kézi import bontása (`lead_source_episode_summary`); az epizód típusa az első rekordjáé, a típusok összege a Mindösszesen epizódszám.
+- **Lead-epizódok (0040, alkalmazva és ellenőrizve 2026-10-22: 600 rekord, 516 epizód, 480 személy):** ugyanaz a személy ugyanazon üzletágban az epizód első rekordjától számított 24 órán belül egy lead (`lead_episode` nézet, `lead_channel_episode_summary`, `lead_episode_totals`); a nyers `lead_channel`/`lead_channel_summary` változatlan. A Kampányok Grand total „Hub lead” ma nyers rekordokat számol (600 rekord, 480 személy, 516 epizód a vizsgált 60 napban). Az Elementor és a kézi import benne marad.
 - **Dokirex:** megjelent/lemondott állapot és bevétel – a Dokirex válaszára vár (`docs/dokirex-kerdesek.md`).
 - **Forrás-attribúció a foglaló appban:** az utolsó vizsgálatkor 0 leadnek volt UTM-je vagy click id-ja; a lassjol.hu GTM-szkriptjét ellenőrizni kell.
 - **Meta-hirdetések UTM-címkéi:** a szemészeti költés kb. 15%-ánál, az esztétikai hirdetéseken szinte mindenhol hiányzik az `utm_campaign`.
