@@ -82,3 +82,22 @@ test("hiányzó beállítás esetén hiba (nincs csendes hívás)", async () => 
   await db.exec("delete from private_settings where key='ingest_secret'");
   await assert.rejects(call(db, "ingest-dokirex"), /ingest_base_url or ingest_secret missing/);
 });
+
+test("0044 előtt az 'ingest-campaign-daily' útvonalat a függvény elutasítja, utána átmegy; a többi útvonal (a dokirex is) változatlan", async () => {
+  const db = await setup();
+  await db.exec(sql("0039_invoke_ingest_dokirex.sql"));
+  await assert.rejects(call(db, "ingest-campaign-daily"), /unknown ingest route/);
+  await db.exec(sql("0044_invoke_ingest_campaign_daily.sql"));
+  await db.exec(sql("0044_invoke_ingest_campaign_daily.sql"));   // újrafuttatható
+  await call(db, "ingest-campaign-daily", '{"from":"2023-01-01","to":"2023-06-30"}');
+  const c = (await db.query("select * from net_calls")).rows[0];
+  assert.equal(c.url, "https://hub.example/api/public/ingest-campaign-daily");
+  assert.deepEqual(c.body, { from: "2023-01-01", to: "2023-06-30" });
+  for (const route of ["ingest-ads", "ingest-web", "ingest-google-search", "ingest-ads-dim", "ingest-breakdowns", "ingest-leads", "ingest-ac", "ingest-seo", "ingest-alerts", "ingest-social", "ingest-dokirex"]) await call(db, route);
+  await assert.rejects(call(db, "ingest-campaign-daily; drop table x"), /unknown ingest route/);
+  for (const role of ["anon", "authenticated"]) {
+    await db.exec(`set role ${role}`);
+    await assert.rejects(call(db, "ingest-campaign-daily"));
+    await db.exec("reset role");
+  }
+});
